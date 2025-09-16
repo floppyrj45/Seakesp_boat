@@ -1,0 +1,2 @@
+# This file keeps the releases directory in version control
+# Actual release binaries will be ignored by .gitignore

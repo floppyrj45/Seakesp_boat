@@ -1,0 +1,774 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Dashboard ROV</title>
+  <style>
+    body{font-family:system-ui,Arial,sans-serif;margin:0;padding:16px;background:#0b0f14;color:#e6edf3}
+    .card{background:#11161d;border:1px solid #1f2a36;border-radius:8px;padding:12px;margin-bottom:12px}
+    h1{font-size:18px;margin:0 0 12px}
+    pre{white-space:pre-wrap;word-break:break-word}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    .kv{display:grid;grid-template-columns:140px 1fr;gap:8px}
+    .row{display:flex;align-items:center;gap:12px}
+    .batt{width:80px;height:32px;border:2px solid #444;position:relative;border-radius:4px;overflow:hidden;background:#0a0e13}
+    .batt::after{content:"";position:absolute;right:-8px;top:8px;width:6px;height:16px;background:#444;border-radius:2px}
+    .fill{height:100%;background:linear-gradient(90deg,#21c95e,#0aa34f)}
+    .warn{background:linear-gradient(90deg,#ffb020,#ff8a00)}
+    .crit{background:linear-gradient(90deg,#ff4d4d,#e40000)}
+  </style>
+  <script>
+    function cls(v, min, max){ return Math.max(0, Math.min(1, (v-min)/(max-min))); }
+    
+    // Historique pour moyennage (stocke les 10 dernières mesures)
+    const powerHistory = {
+      voltage: [],
+      current: [],
+      timestamps: []
+    };
+    
+    function updatePowerHistory(voltage, current) {
+      const now = Date.now();
+      powerHistory.voltage.push(voltage);
+      powerHistory.current.push(current);
+      powerHistory.timestamps.push(now);
+      
+      // Garder seulement les 10 dernières mesures
+      if (powerHistory.voltage.length > 10) {
+        powerHistory.voltage.shift();
+        powerHistory.current.shift();
+        powerHistory.timestamps.shift();
+      }
+    }
+    
+    function estimateBatteryTime() {
+      if (powerHistory.voltage.length < 3) return null; // Pas assez de données
+      
+      // Calculer les moyennes pondérées (plus de poids aux mesures récentes)
+      let weightedVoltage = 0, weightedCurrent = 0, totalWeight = 0;
+      const len = powerHistory.voltage.length;
+      
+      for (let i = 0; i < len; i++) {
+        const weight = (i + 1) / len; // Poids croissant pour les mesures récentes
+        weightedVoltage += powerHistory.voltage[i] * weight;
+        weightedCurrent += powerHistory.current[i] * weight;
+        totalWeight += weight;
+      }
+      
+      const avgVoltage = weightedVoltage / totalWeight;
+      const avgCurrent = weightedCurrent / totalWeight;
+      
+      if (avgCurrent < 50) return null; // Courant trop faible pour estimer
+      
+      // Courbe de décharge plus réaliste pour LiPo 3S
+      // Non-linéaire : la batterie se décharge plus vite à basse tension
+      let voltagePercent;
+      if (avgVoltage >= 11.1) {
+        voltagePercent = 0.95 + (avgVoltage - 11.1) * 0.05 / 0.1; // 95-100%
+      } else if (avgVoltage >= 10.8) {
+        voltagePercent = 0.80 + (avgVoltage - 10.8) * 0.15 / 0.3; // 80-95%
+      } else if (avgVoltage >= 10.2) {
+        voltagePercent = 0.50 + (avgVoltage - 10.2) * 0.30 / 0.6; // 50-80%
+      } else if (avgVoltage >= 9.6) {
+        voltagePercent = 0.20 + (avgVoltage - 9.6) * 0.30 / 0.6; // 20-50%
+      } else if (avgVoltage >= 9.2) {
+        voltagePercent = (avgVoltage - 9.2) * 0.20 / 0.4; // 0-20%
+      } else {
+        voltagePercent = 0;
+      }
+      
+      // Capacité de la batterie (récupérée du localStorage ou 5000mAh par défaut)
+      const batteryCapacityMah = parseInt(localStorage.getItem('batteryCapacity') || '5000');
+      const remainingCapacityMah = batteryCapacityMah * voltagePercent;
+      
+      // Temps restant en heures avec facteur de sécurité
+      const hoursRemaining = (remainingCapacityMah / avgCurrent) * 0.9; // 90% pour être conservateur
+      
+      return hoursRemaining;
+    }
+    
+    function formatBatteryTime(hours) {
+      if (!hours || hours < 0) return '-';
+      if (hours > 24) return '>24h';
+      
+      const h = Math.floor(hours);
+      const m = Math.round((hours - h) * 60);
+      
+      if (h > 0) {
+        return `${h}h${m.toString().padStart(2, '0')}`;
+      } else {
+        return `${m}min`;
+      }
+    }
+    
+    function getWifiIcon(rssi) {
+      if (!rssi || rssi === 0) return '❌';
+      if (rssi >= -50) return '📶'; // Excellent
+      if (rssi >= -60) return '📵'; // Très bon
+      if (rssi >= -70) return '📴'; // Bon
+      if (rssi >= -80) return '📳'; // Faible
+      return '📳'; // Très faible
+    }
+    
+    function getWifiQuality(rssi) {
+      if (!rssi || rssi === 0) return 'Déconnecté';
+      if (rssi >= -50) return 'Excellent';
+      if (rssi >= -60) return 'Très bon';
+      if (rssi >= -70) return 'Bon';
+      if (rssi >= -80) return 'Faible';
+      return 'Très faible';
+    }
+    
+    function updateDateTime() {
+      const now = new Date();
+      const dateStr = now.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+      const timeStr = now.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      document.getElementById('datetime').textContent = `${dateStr} ${timeStr}`;
+    }
+    
+    async function refresh(){
+      try{
+        const r = await fetch('/api/telemetry', {cache:'no-store'});
+        const j = await r.json();
+        // Affichage GPS avec statut RTK
+        if(j.gps) {
+          let gpsText = `Valid: ${j.gps.valid ? 'OUI' : 'NON'}\n`;
+          // Déterminer la précision selon le statut
+          let precision = '5-10m';
+          if (j.gps.status === 'RTK Fix') precision = '1-2cm';
+          else if (j.gps.status === 'RTK Float') precision = '10-30cm';
+          else if (j.gps.status === 'DGPS') precision = '1-3m';
+          
+          gpsText += `Status: ${j.gps.status || 'Natural'}\n`;
+          gpsText += `Précision: ~${precision}\n`;
+          gpsText += `Lat: ${j.gps.lat?.toFixed(7) || '-'}\n`;
+          gpsText += `Lon: ${j.gps.lon?.toFixed(7) || '-'}\n`;
+          gpsText += `Cap: ${j.gps.hdg?.toFixed(1) || '-'}°\n`;
+          gpsText += `Sats: ${j.gps.sats || 0}\n`;
+          gpsText += `HDOP: ${j.gps.hdop?.toFixed(1) || '-'}`;
+          document.getElementById('gps').textContent = gpsText;
+          
+          // Mettre à jour l'affichage spécial du heading GPS
+          const headingDisplay = document.getElementById('gps-heading');
+          if (headingDisplay) {
+            const heading = j.gps.hdg?.toFixed(1) || '--';
+            headingDisplay.textContent = heading + '°';
+            
+            // Couleur selon la validité du heading
+            if (j.gps.hdg !== undefined && j.gps.hdg !== null && !isNaN(j.gps.hdg)) {
+              headingDisplay.style.background = '#2563eb';
+              headingDisplay.style.borderColor = '#1d4ed8';
+            } else {
+              headingDisplay.style.background = '#6b7280';
+              headingDisplay.style.borderColor = '#4b5563';
+            }
+          }
+          
+          // Mettre à jour le badge de statut GPS
+          const statusBadge = document.getElementById('gps-status-badge');
+          if (statusBadge) {
+            if (j.gps.status === 'RTK Fix') {
+              statusBadge.textContent = 'RTK FIX';
+              statusBadge.style.background = '#4CAF50';
+              statusBadge.style.color = 'white';
+            } else if (j.gps.status === 'RTK Float') {
+              statusBadge.textContent = 'RTK FLOAT';
+              statusBadge.style.background = '#FFC107';
+              statusBadge.style.color = 'black';
+            } else if (j.gps.status === 'DGPS') {
+              statusBadge.textContent = 'DGPS';
+              statusBadge.style.background = '#03A9F4';
+              statusBadge.style.color = 'white';
+            } else {
+              statusBadge.textContent = 'NATURAL';
+              statusBadge.style.background = '#9E9E9E';
+              statusBadge.style.color = 'white';
+            }
+          }
+        }
+        
+        // Affichage SEAKER
+        document.getElementById('seaker').textContent = JSON.stringify(j.seaker,null,2);
+        if(j.power){
+          const v = j.power.voltage, i = j.power.current_mA;
+          
+          // Mise à jour de l'historique
+          updatePowerHistory(v, i);
+          
+          // Ajusté pour max 11.2V au lieu de 12.0V
+          const pct = Math.round(cls(v, 9.2, 11.2)*100);
+          const fill = document.getElementById('bfill');
+          fill.style.width = pct + '%';
+          // Seuils ajustés: critique < 9.5V, warning < 10.0V
+          fill.className = 'fill' + (v<9.5? ' crit' : (v<10.0? ' warn' : ''));
+          document.getElementById('btxt').textContent = v.toFixed(2)+' V';
+          document.getElementById('itxt').textContent = i.toFixed(0)+' mA';
+          
+          // Estimation du temps restant
+          const timeRemaining = estimateBatteryTime();
+          const timeText = formatBatteryTime(timeRemaining);
+          document.getElementById('btime').textContent = timeText;
+          
+          // Couleur du temps selon l'urgence
+          const timeEl = document.getElementById('btime');
+          if (timeRemaining && timeRemaining < 0.5) { // < 30 min
+            timeEl.style.color = '#ff4d4d';
+          } else if (timeRemaining && timeRemaining < 1) { // < 1h
+            timeEl.style.color = '#ffb020';
+          } else {
+            timeEl.style.color = '#e6edf3';
+          }
+        }
+        // Cibles & UTM & réseau
+        document.getElementById('ntrip').textContent = j.ntrip? `${j.ntrip.enabled?'ON':'OFF'} ${j.ntrip.mount} ${j.ntrip.streaming?'(stream)':''}` : '-';
+        document.getElementById('ip').textContent = j.ip || '-';
+        document.getElementById('ver').textContent = j.version || '-';
+        
+        // Mise à jour du signal WiFi
+        console.log('RSSI reçu:', j.rssi); // Debug
+        if (j.rssi !== undefined && j.rssi !== null && j.rssi !== 0) {
+          const quality = getWifiQuality(j.rssi);
+          const icon = getWifiIcon(j.rssi);
+          document.getElementById('wifi').innerHTML = `${icon} ${quality} (${j.rssi} dBm)`;
+        } else if (j.rssi === 0) {
+          document.getElementById('wifi').innerHTML = '📡 Recherche signal...';
+        } else {
+          document.getElementById('wifi').innerHTML = '📡 Pas de signal';
+        }
+        if (j.gps && j.gps.utm){
+          document.getElementById('gpsutm').textContent = `Zone ${j.gps.utm.zone}${j.gps.utm.north? 'N':'S'} E=${j.gps.utm.e.toFixed(2)} N=${j.gps.utm.n.toFixed(2)}`;
+        }
+        if (j.targetf){
+          const tf = j.targetf; let utm='-';
+          if (tf.utm){ utm = `Zone ${tf.utm.zone}${tf.utm.north? 'N':'S'} E=${tf.utm.e.toFixed(2)} N=${tf.utm.n.toFixed(2)}`; }
+          document.getElementById('tflatlon').textContent = `${tf.lat.toFixed(7)}, ${tf.lon.toFixed(7)}`;
+          document.getElementById('tfr95').textContent = `${tf.r95_m.toFixed(2)} m`; 
+          document.getElementById('tfutm').textContent = utm;
+        }
+      }catch(e){console.log(e); const el=document.getElementById('err'); if(el) el.textContent = String(e);}    
+    }
+    function showWifiConfig() {
+      // Charger les paramètres actuels
+      fetch('/api/wifi')
+        .then(r => r.json())
+        .then(data => {
+          document.getElementById('wifiSsid').value = data.ssid || '';
+          document.getElementById('wifiModal').style.display = 'block';
+        })
+        .catch(err => console.error('Erreur chargement WiFi:', err));
+    }
+    
+    function closeWifiConfig() {
+      document.getElementById('wifiModal').style.display = 'none';
+      document.getElementById('wifiStatus').style.display = 'none';
+    }
+    
+    function configureBattery() {
+      const currentCapacity = localStorage.getItem('batteryCapacity') || '5000';
+      const newCapacity = prompt('Capacité de la batterie (mAh):', currentCapacity);
+      
+      if (newCapacity && !isNaN(newCapacity) && parseInt(newCapacity) > 0) {
+        localStorage.setItem('batteryCapacity', newCapacity);
+        alert(`Capacité de batterie mise à jour: ${newCapacity} mAh`);
+        // Réinitialiser l'historique pour recalculer
+        powerHistory.voltage = [];
+        powerHistory.current = [];
+        powerHistory.timestamps = [];
+      }
+    }
+    
+    let gpsForwardEnabled = false;
+    let seakerConfig = {
+      mode: localStorage.getItem('seakerMode') || 'normal',
+      offset: parseFloat(localStorage.getItem('seakerOffset') || '0'),
+      transponderDelay: parseFloat(localStorage.getItem('transponderDelay') || '0'),
+      invertAngle: localStorage.getItem('seakerInvertAngle') === 'true'
+    };
+    
+    function updateSeakerMode() {
+      const mode = document.getElementById('seakerMode').value;
+      document.getElementById('offsetConfig').style.display = (mode === 'offset') ? 'block' : 'none';
+      document.getElementById('transponderConfig').style.display = (mode === 'transponder') ? 'block' : 'none';
+    }
+    
+    function loadSeakerConfig() {
+      document.getElementById('seakerMode').value = seakerConfig.mode;
+      document.getElementById('distOffset').value = seakerConfig.offset;
+      document.getElementById('transponderDelay').value = seakerConfig.transponderDelay;
+      document.getElementById('invertAngle').checked = seakerConfig.invertAngle;
+      updateSeakerMode();
+    }
+    
+    // Gestion des profils CONFIG SEAKER
+    let seakerConfigs = [];
+    
+    async function loadSeakerConfigs() {
+      try {
+        const r = await fetch('/api/seaker-configs');
+        seakerConfigs = await r.json();
+        updateConfigDisplay();
+      } catch(e) {
+        console.error('Erreur chargement configs:', e);
+      }
+    }
+    
+    function updateConfigDisplay() {
+      for (let i = 0; i < 4; i++) {
+        const input = document.getElementById(`config${i}`);
+        if (input && seakerConfigs[i]) {
+          input.value = seakerConfigs[i];
+        }
+      }
+    }
+    
+    async function saveConfig(idx) {
+      const input = document.getElementById(`config${idx}`);
+      if (!input) return;
+      
+      try {
+        const r = await fetch('/api/seaker-configs', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+          body: `idx=${idx}&payload=${encodeURIComponent(input.value)}`
+        });
+        if (r.ok) {
+          seakerConfigs[idx] = input.value;
+          console.log(`Config ${idx} sauvegardée`);
+        }
+      } catch(e) {
+        console.error('Erreur sauvegarde config:', e);
+      }
+    }
+    
+    async function sendConfig(idx) {
+      try {
+        const r = await fetch('/api/seaker-configs/send', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+          body: `idx=${idx}`
+        });
+        if (r.ok) {
+          console.log(`Config ${idx} envoyée au SEAKER`);
+        }
+      } catch(e) {
+        console.error('Erreur envoi config:', e);
+      }
+    }
+    
+    async function saveSeakerConfig() {
+      const mode = document.getElementById('seakerMode').value;
+      const offset = parseFloat(document.getElementById('distOffset').value) || 0;
+      const transponderDelay = parseFloat(document.getElementById('transponderDelay').value) || 0;
+      const invertAngle = document.getElementById('invertAngle').checked;
+      
+      seakerConfig = { mode, offset, transponderDelay, invertAngle };
+      
+      // Sauvegarder dans localStorage
+      localStorage.setItem('seakerMode', mode);
+      localStorage.setItem('seakerOffset', offset);
+      localStorage.setItem('transponderDelay', transponderDelay);
+      localStorage.setItem('seakerInvertAngle', invertAngle);
+      
+      // Envoyer à l'ESP32
+      try {
+        const params = new URLSearchParams();
+        params.append('mode', mode);
+        params.append('offset', offset);
+        params.append('delay', transponderDelay);
+        params.append('invert', invertAngle);
+        
+        const r = await fetch('/api/seaker-config', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+          body: params
+        });
+        
+        if (r.ok) {
+          console.log('Configuration SEAKER appliquée:', seakerConfig);
+          alert('Configuration SEAKER mise à jour');
+        }
+      } catch(e) {
+        console.error('Erreur config SEAKER:', e);
+        alert('Erreur lors de la configuration');
+      }
+    }
+    
+    async function checkGpsForward() {
+      try {
+        const r = await fetch('/api/gps-forward');
+        const data = await r.json();
+        gpsForwardEnabled = data.enabled;
+        updateGpsForwardButton();
+      } catch(e) {
+        console.error('Erreur check GPS Forward:', e);
+      }
+    }
+    
+    function updateGpsForwardButton() {
+      const btn = document.getElementById('gpsForwardBtn');
+      if (btn) {
+        btn.textContent = gpsForwardEnabled ? 'ON' : 'OFF';
+        btn.style.background = gpsForwardEnabled ? '#4CAF50' : '#666';
+      }
+    }
+    
+    async function loadWifiDirect() {
+      try {
+        const r = await fetch('/api/wifi');
+        const data = await r.json();
+        const ssidField = document.getElementById('wifiSsidDash');
+        if (ssidField && data.ssid) {
+          ssidField.value = data.ssid;
+        }
+      } catch(e) {
+        console.error('Erreur chargement WiFi:', e);
+      }
+    }
+    
+    async function saveWifiDirect() {
+      const ssid = document.getElementById('wifiSsidDash').value;
+      const pass = document.getElementById('wifiPassDash').value;
+      
+      if (!ssid) {
+        alert('Le SSID est requis');
+        return;
+      }
+      
+      const data = {
+        ssid: ssid,
+        password: pass
+      };
+      
+      try {
+        const r = await fetch('/api/wifi', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(data)
+        });
+        const result = await r.json();
+        if (result.status === 'ok') {
+          alert('WiFi sauvegardé ! Redémarrage en cours...');
+        }
+      } catch(e) {
+        console.error('Erreur sauvegarde WiFi:', e);
+        alert('Erreur lors de la sauvegarde');
+      }
+    }
+    
+    async function toggleGpsForward() {
+      gpsForwardEnabled = !gpsForwardEnabled;
+      try {
+        const r = await fetch('/api/gps-forward', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+          body: 'enabled=' + gpsForwardEnabled
+        });
+        if (r.ok) {
+          updateGpsForwardButton();
+          console.log('GPS Forward:', gpsForwardEnabled ? 'activé' : 'désactivé');
+        }
+      } catch(e) {
+        console.error('Erreur toggle GPS Forward:', e);
+        gpsForwardEnabled = !gpsForwardEnabled; // Revert
+        updateGpsForwardButton();
+      }
+    }
+    
+    async function rebootSystem() {
+      if (!confirm('⚠️ Confirmer le redémarrage du système ESP32?\n\nLe système sera indisponible pendant ~30 secondes.')) {
+        return;
+      }
+      
+      const btn = event.target;
+      btn.disabled = true;
+      btn.style.background = '#666';
+      btn.innerHTML = '⏳ Redémarrage...';
+      
+      try {
+        const r = await fetch('/api/reboot', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'}
+        });
+        if (r.ok) {
+          console.log('System rebooting...');
+          // Afficher un message et recharger la page après 15 secondes
+          setTimeout(() => {
+            alert('💻 Système redémarré. Actualisation de la page...');
+            window.location.reload();
+          }, 15000);
+        } else {
+          throw new Error('Réponse serveur invalide');
+        }
+      } catch(err) {
+        console.error('Reboot failed:', err);
+        btn.disabled = false;
+        btn.style.background = '#dc2626';
+        btn.innerHTML = '🔄 Reboot';
+        alert('❌ Échec du redémarrage: ' + err.message);
+      }
+    }
+    
+    function saveWifiConfig() {
+      const ssid = document.getElementById('wifiSsid').value;
+      const pass = document.getElementById('wifiPass').value;
+      
+      if (!ssid) {
+        alert('Le SSID est requis');
+        return;
+      }
+      
+      const status = document.getElementById('wifiStatus');
+      status.textContent = 'Sauvegarde en cours...';
+      status.style.display = 'block';
+      
+      // Envoyer en JSON
+      const data = {
+        ssid: ssid,
+        password: pass
+      };
+      
+      fetch('/api/wifi', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data)
+      })
+      .then(r => r.json())
+      .then(data => {
+        if (data.status === 'ok') {
+          status.textContent = 'Sauvegardé ! Redémarrage en cours...';
+          status.style.color = '#4CAF50';
+          setTimeout(() => {
+            alert('L\'ESP32 va redémarrer. Reconnectez-vous au nouveau réseau WiFi.');
+            closeWifiConfig();
+          }, 2000);
+        } else {
+          status.textContent = 'Erreur: ' + data.message;
+          status.style.color = '#f77';
+        }
+      })
+      .catch(err => {
+        status.textContent = 'Erreur de connexion';
+        status.style.color = '#f77';
+      });
+    }
+    
+    // WebSocket pour mises à jour temps réel
+    let ws, wsConnected = false;
+    
+    function connectWebSocket() {
+      if (ws && ws.readyState === WebSocket.OPEN) return;
+      
+      try {
+        ws = new WebSocket(`ws://${window.location.hostname}:81`);
+        
+        ws.onopen = () => { 
+          wsConnected = true; 
+          console.log('WebSocket connecté');
+        };
+        
+        ws.onclose = () => { 
+          wsConnected = false; 
+          console.log('WebSocket fermé, reconnexion dans 2s...');
+          setTimeout(connectWebSocket, 2000); 
+        };
+        
+        ws.onmessage = (ev) => {
+          try {
+            const msg = JSON.parse(ev.data);
+            
+            // Mise à jour GPS en temps réel (heading inclus)
+            if (msg.gps && msg.gps.valid) {
+              updateGpsHeadingRealtime(msg.gps);
+            }
+            
+            // Autres mises à jour...
+            if (msg.rssi !== undefined) {
+              console.log('RSSI WebSocket:', msg.rssi);
+            }
+            
+          } catch(e) {
+            console.error('Erreur parsing WebSocket:', e);
+          }
+        };
+        
+        ws.onerror = (err) => {
+          console.error('Erreur WebSocket:', err);
+        };
+        
+      } catch(e) {
+        console.error('Erreur connexion WebSocket:', e);
+        setTimeout(connectWebSocket, 2000);
+      }
+    }
+    
+    // Fonction pour mettre à jour seulement le heading GPS via WebSocket
+    function updateGpsHeadingRealtime(gpsData) {
+      const headingDisplay = document.getElementById('gps-heading');
+      if (headingDisplay && gpsData.hdg !== undefined) {
+        const heading = gpsData.hdg?.toFixed(1) || '--';
+        headingDisplay.textContent = heading + '°';
+        
+        // Couleur selon la validité du heading
+        if (gpsData.hdg !== undefined && gpsData.hdg !== null && !isNaN(gpsData.hdg)) {
+          headingDisplay.style.background = '#2563eb';
+          headingDisplay.style.borderColor = '#1d4ed8';
+        } else {
+          headingDisplay.style.background = '#6b7280';
+          headingDisplay.style.borderColor = '#4b5563';
+        }
+        
+        console.log('Dashboard heading updated via WS:', heading);
+      }
+    }
+    
+    setInterval(refresh, 1000);
+    setInterval(updateDateTime, 1000);
+    window.addEventListener('load', () => {
+      refresh();
+      updateDateTime();
+      checkGpsForward(); // Vérifier l'état initial du GPS Forward
+      loadWifiDirect(); // Charger le SSID actuel
+      loadSeakerConfig(); // Charger la configuration SEAKER
+      loadSeakerConfigs(); // Charger les profils CONFIG
+      connectWebSocket(); // ✅ Connecter WebSocket pour temps réel
+    });
+  </script>
+</head>
+<body>
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+    <h1 style="margin:0">Dashboard ROV</h1>
+    <div id="datetime" style="color:#7cc4ff;font-size:14px">--/--/---- --:--:--</div>
+  </div>
+  <div class="grid">
+    <div class="card" style="position:relative">
+      <h2 style="display:flex;align-items:center;justify-content:space-between">
+        GPS
+        <span id="gps-status-badge" style="font-size:11px;padding:2px 8px;border-radius:12px;font-weight:normal">-</span>
+      </h2>
+      <pre id="gps">...</pre>
+      <hr style="margin:8px 0;opacity:0.3">
+      <div style="text-align:center;margin-top:8px">
+        <div style="font-size:11px;color:#7cc4ff;margin-bottom:4px">CAP GPS</div>
+        <div id="gps-heading" style="display:inline-block;background:#2563eb;color:white;padding:8px 16px;border-radius:8px;font-size:18px;font-weight:bold;min-width:60px;border:2px solid #1d4ed8">--°</div>
+      </div>
+    </div>
+    <div class="card">
+      <h2>SEAKER</h2>
+      <pre id="seaker">...</pre>
+      <hr style="margin:8px 0;opacity:0.3">
+      <div style="margin-top:8px">
+        <div style="margin-bottom:8px">
+          <label style="display:inline-block;width:100px;font-size:11px">Mode:</label>
+          <select id="seakerMode" onchange="updateSeakerMode()" style="width:120px;padding:2px 4px;border:1px solid #444;background:#1a1a1a;color:#e6edf3;border-radius:3px;font-size:11px">
+            <option value="normal">Normal</option>
+            <option value="offset">Offset fixe</option>
+            <option value="transponder">Transpondeur</option>
+          </select>
+        </div>
+        <div id="offsetConfig" style="display:none;margin-bottom:8px">
+          <label style="display:inline-block;width:100px;font-size:11px">Offset (m):</label>
+          <input type="number" id="distOffset" value="0" step="0.1" style="width:120px;padding:2px 4px;border:1px solid #444;background:#1a1a1a;color:#e6edf3;border-radius:3px;font-size:11px">
+        </div>
+        <div id="transponderConfig" style="display:none;margin-bottom:8px">
+          <label style="display:inline-block;width:100px;font-size:11px">Délai (ms):</label>
+          <input type="number" id="transponderDelay" value="0" step="0.1" style="width:120px;padding:2px 4px;border:1px solid #444;background:#1a1a1a;color:#e6edf3;border-radius:3px;font-size:11px">
+          <div style="margin-top:4px;font-size:10px;color:#7cc4ff">Vitesse son: 1500 m/s</div>
+        </div>
+        <div style="margin-bottom:8px">
+          <label style="display:inline-block;width:100px;font-size:11px">
+            <input type="checkbox" id="invertAngle" style="margin-right:4px">
+            Inverser angles
+          </label>
+          <div style="margin-top:2px;font-size:10px;color:#888">Change le sens de rotation des angles SEAKER</div>
+        </div>
+        <button onclick="saveSeakerConfig()" style="background:#3b82f6;color:white;border:none;padding:4px 8px;border-radius:3px;cursor:pointer;font-size:11px">Appliquer</button>
+      </div>
+    </div>
+  </div>
+  <div class="grid">
+    <div class="card"><h2>GPS UTM</h2><div id="gpsutm">-</div></div>
+    <div class="card"><h2>NTRIP</h2><div id="ntrip">-</div></div>
+  </div>
+  <div class="grid">
+    <div class="card"><h2>TargetF lat/lon</h2><div id="tflatlon">-</div></div>
+    <div class="card"><h2>TargetF r95 / UTM</h2><div id="tfr95">-</div><div id="tfutm">-</div></div>
+  </div>
+  <div class="card">
+    <div class="row">
+      <div class="batt"><div id="bfill" class="fill" style="width:0%"></div></div>
+      <div id="btxt">--.- V</div>
+      <div id="itxt">---- mA</div>
+      <div id="btime" style="margin-left:12px;font-weight:bold" title="Temps restant estimé">-</div>
+      <button onclick="configureBattery()" style="margin-left:auto;background:#666;color:white;border:none;padding:4px 8px;border-radius:3px;cursor:pointer;font-size:11px" title="Configurer capacité batterie">⚙</button>
+    </div>
+  </div>
+  <div class="grid">
+    <div class="card">
+      <h2>Réseau</h2>
+      <div>IP: <span id="ip">-</span></div>
+      <div>TCP: Port 10110</div>
+      <div>GPS Forward: Port 10111 <button id="gpsForwardBtn" onclick="toggleGpsForward()" style="background:#666;color:white;border:none;padding:2px 8px;border-radius:3px;cursor:pointer;margin-left:8px;font-size:11px">OFF</button></div>
+      <div id="wifi">📡 -</div>
+      <div>Version: <span id="ver">-</span></div>
+      <div style="margin-top:8px;padding-top:8px;border-top:1px solid #333">
+        <button onclick="rebootSystem()" style="background:#dc2626;color:white;border:none;padding:6px 12px;border-radius:4px;cursor:pointer;font-size:11px;margin-right:8px" title="Redémarrer l'ESP32">🔄 Reboot</button>
+        <span style="font-size:10px;color:#888">Redémarre le système ESP32</span>
+      </div>
+      <hr style="margin:8px 0;opacity:0.3">
+      <div style="margin-top:8px">
+        <div style="margin-bottom:8px">
+          <label style="display:inline-block;width:60px;font-size:12px">SSID:</label>
+          <input type="text" id="wifiSsidDash" style="width:120px;padding:2px 4px;border:1px solid #444;background:#1a1a1a;color:#e6edf3;border-radius:3px">
+        </div>
+        <div style="margin-bottom:8px">
+          <label style="display:inline-block;width:60px;font-size:12px">Pass:</label>
+          <input type="password" id="wifiPassDash" style="width:120px;padding:2px 4px;border:1px solid #444;background:#1a1a1a;color:#e6edf3;border-radius:3px">
+        </div>
+        <button onclick="saveWifiDirect()" style="background:#4CAF50;color:white;border:none;padding:6px 12px;border-radius:4px;cursor:pointer">Sauvegarder WiFi</button>
+      </div>
+    </div>
+    <div class="card">
+      <h1>Profils CONFIG SEAKER</h1>
+      <div style="font-size:12px">
+        <div style="margin-bottom:8px">
+          <label style="display:inline-block;width:50px">CFG 0:</label>
+          <input type="text" id="config0" style="width:260px;padding:2px 4px;border:1px solid #444;background:#1a1a1a;color:#e6edf3;border-radius:3px;font-size:11px">
+          <button onclick="saveConfig(0)" style="background:#2563eb;color:white;border:none;padding:2px 6px;border-radius:3px;cursor:pointer;margin-left:4px;font-size:11px">💾</button>
+          <button onclick="sendConfig(0)" style="background:#10b981;color:white;border:none;padding:2px 6px;border-radius:3px;cursor:pointer;margin-left:4px;font-size:11px">📡</button>
+        </div>
+        <div style="margin-bottom:8px">
+          <label style="display:inline-block;width:50px">CFG 1:</label>
+          <input type="text" id="config1" style="width:260px;padding:2px 4px;border:1px solid #444;background:#1a1a1a;color:#e6edf3;border-radius:3px;font-size:11px">
+          <button onclick="saveConfig(1)" style="background:#2563eb;color:white;border:none;padding:2px 6px;border-radius:3px;cursor:pointer;margin-left:4px;font-size:11px">💾</button>
+          <button onclick="sendConfig(1)" style="background:#10b981;color:white;border:none;padding:2px 6px;border-radius:3px;cursor:pointer;margin-left:4px;font-size:11px">📡</button>
+        </div>
+        <div style="margin-bottom:8px">
+          <label style="display:inline-block;width:50px">CFG 2:</label>
+          <input type="text" id="config2" style="width:260px;padding:2px 4px;border:1px solid #444;background:#1a1a1a;color:#e6edf3;border-radius:3px;font-size:11px">
+          <button onclick="saveConfig(2)" style="background:#2563eb;color:white;border:none;padding:2px 6px;border-radius:3px;cursor:pointer;margin-left:4px;font-size:11px">💾</button>
+          <button onclick="sendConfig(2)" style="background:#10b981;color:white;border:none;padding:2px 6px;border-radius:3px;cursor:pointer;margin-left:4px;font-size:11px">📡</button>
+        </div>
+        <div style="margin-bottom:8px">
+          <label style="display:inline-block;width:50px">CFG 3:</label>
+          <input type="text" id="config3" style="width:260px;padding:2px 4px;border:1px solid #444;background:#1a1a1a;color:#e6edf3;border-radius:3px;font-size:11px">
+          <button onclick="saveConfig(3)" style="background:#2563eb;color:white;border:none;padding:2px 6px;border-radius:3px;cursor:pointer;margin-left:4px;font-size:11px">💾</button>
+          <button onclick="sendConfig(3)" style="background:#10b981;color:white;border:none;padding:2px 6px;border-radius:3px;cursor:pointer;margin-left:4px;font-size:11px">📡</button>
+        </div>
+        <div style="margin-top:8px;color:#888;font-size:10px">
+          💾 Sauvegarder en NVS | 📡 Envoyer au SEAKER
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <a href="/map" style="color:#7cc4ff;display:block;margin-bottom:8px">🗺️ Ouvrir la carte</a>
+      <a href="/about" style="color:#10b981;display:block;margin-bottom:8px">📖 À propos</a>
+      <a href="/update" style="color:#ff9f40;display:block;margin-bottom:8px">🔄 Mise à jour OTA</a>
+      <a href="mailto:Seakesp@nowyouknow.fr?subject=Feedback ROV&body=Version: v0.3.4%0D%0A%0D%0A[Décrivez votre problème ou suggestion ici]" style="color:#9ca3af;display:block" title="Reporter un bug ou envoyer un feedback">📧 Contact Support</a>
+    </div>
+  </div>
+  <div class="card"><small id="err" style="color:#f77"></small></div>
+</body>
+</html>
+
+

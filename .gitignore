@@ -1,0 +1,53 @@
+# PlatformIO files
+.pio/
+.pioenvs/
+.piolibdeps/
+.vscode/
+.clang_complete
+.gcc-flags.json
+
+# Compiled binaries
+*.bin
+*.hex
+*.elf
+*.o
+*.a
+
+# Build artifacts
+build/
+.build/
+firmware.*
+
+# ESP32 specific
+*.map
+bootloader.bin
+partitions.bin
+littlefs*.bin
+
+# IDE files
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Logs and temporary files
+*.log
+*.tmp
+*.temp
+
+# Python cache (pour les docs)
+__pycache__/
+*.pyc
+*.pyo
+
+# Photos/Media temporaires (garder seulement les importantes)
+Photos\ iCloud/
+*.zip
+
+# Releases directory (garder mais pas le contenu)
+releases/*
+!releases/.gitkeep
+
+# Temporary files
+*.geojson.tmp

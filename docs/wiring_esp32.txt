@@ -1,0 +1,35 @@
+ESP32 DevKitC-32D - Câblage Seaker ESP32 (v0.3.0-cablage)
+
+UART1 GPS Skytraq (ou compatible)
+- GPS_TX -> ESP32 GPIO25 (GPS_RX_PIN)
+- GPS_RX -> ESP32 GPIO26 (GPS_TX_PIN)
+- PPS (optionnel) -> ESP32 GPIO4 (GPS_PPS_PIN)
+
+UART2 SEAKER sonar
+- SEAKER_TX -> ESP32 GPIO17 (SONAR_RX_PIN)
+- SEAKER_RX -> ESP32 GPIO16 (SONAR_TX_PIN)
+
+I2C (réservé / non utilisé)
+- SDA -> GPIO21
+- SCL -> GPIO22
+
+Alimentation
+- 3V3 commun, masses communes entre modules et ESP32
+
+NTRIP/RTCM
+- Le client NTRIP intégré ouvre une connexion TCP sur le caster (par défaut crtk.net:2101, mount NEAR)
+- Les messages RTCM reçus sont forwardés vers l'UART GPS via gpsFeedRtcm()
+- Une trame GGA est envoyée toutes 10 s si un fix est disponible
+
+Conseils de câblage
+- Utiliser des liaisons UART courtes et blindées si possible
+- Vérifier le croisement TX/RX (option /gps/swap prévue côté firmware pour debug)
+- Partager la masse entre tous les équipements
+
+Exclusions
+- Aucun capteur IMU ni PM02, aucune fusion/ekf dans ce firmware
+
+
+
+
+

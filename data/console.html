@@ -1,0 +1,114 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Console</title>
+  <style>
+    body{margin:0;background:#0b0f14;color:#e6edf3;font:14px system-ui,Arial}
+    #log{height:80vh;overflow:auto;white-space:pre-wrap;padding:10px;border-bottom:1px solid #1f2a36}
+    .row{display:flex;gap:8px;padding:8px}
+    input,select,button{background:#11161d;color:#e6edf3;border:1px solid #1f2a36;border-radius:4px;padding:6px}
+  </style>
+</head>
+<body>
+  <div class="row">
+    <select id="lvl">
+      <option>ERROR</option><option>WARN</option><option selected>LOW</option><option>INFO</option><option>DEBUG</option>
+    </select>
+    <button onclick="setLevel()">Set level (WS)</button>
+    <button onclick="setLevelHTTP()">Set level (API)</button>
+    <button onclick="getLevelHTTP()">Get level</button>
+    <button onclick="clr()">Clear</button>
+    <span id="status" style="color:#7cc4ff;margin-left:12px"></span>
+  </div>
+  <div id="log"></div>
+  <div class="row">
+    <input id="inp" style="flex:1" placeholder="$GOSEAK,... ou commande" onkeypress="if(event.key==='Enter')send()" />
+    <button onclick="send()">Envoyer</button>
+  </div>
+  <script>
+    let ws, log=document.getElementById('log');
+    function append(s){ log.textContent += s+"\n"; log.scrollTop = log.scrollHeight; }
+    function connect(){
+      ws = new WebSocket(`ws://${location.hostname}:81/`);
+      ws.onopen=()=>append('[WS] connecté');
+      ws.onclose=()=>{append('[WS] déconnecté'); setTimeout(connect, 1000)};
+      ws.onmessage=(ev)=>{
+        try{
+          const m = JSON.parse(ev.data);
+          if (m.nmea) append(m.nmea);
+          if (m.gps) append(`$GPS,${m.gps.lat},${m.gps.lon}`);
+          if (m.targetf) append(`$TARGETF,${m.targetf.lat},${m.targetf.lon},r95=${m.targetf.r95_m}`);
+        }catch{ append(ev.data); }
+      };
+    }
+    function updateStatus(msg, color='#7cc4ff') {
+      const status = document.getElementById('status');
+      status.textContent = msg;
+      status.style.color = color;
+      setTimeout(() => { status.textContent = ''; }, 3000);
+    }
+    
+    function setLevel(){ 
+      const lvl=document.getElementById('lvl').value; 
+      const message = JSON.stringify({cmd:'setLogLevel',level:lvl});
+      append(`[DEBUG] Sending WebSocket: ${message}`);
+      ws.send(message); 
+      updateStatus(`WebSocket: Niveau → ${lvl}`, '#4CAF50');
+    }
+    
+    async function setLevelHTTP() {
+      const lvl = document.getElementById('lvl').value;
+      try {
+        const response = await fetch('/api/loglevel', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+          body: `level=${lvl}`
+        });
+        const result = await response.json();
+        if (result.status === 'ok') {
+          append(`[API] LogLevel changed to: ${result.level}`);
+          updateStatus(`API: Niveau → ${result.level}`, '#4CAF50');
+        } else {
+          append(`[API] Error: ${result.message}`);
+          updateStatus(`Erreur: ${result.message}`, '#ff4d4d');
+        }
+      } catch (error) {
+        append(`[API] HTTP Error: ${error.message}`);
+        updateStatus(`Erreur HTTP: ${error.message}`, '#ff4d4d');
+      }
+    }
+    
+    async function getLevelHTTP() {
+      try {
+        const response = await fetch('/api/loglevel');
+        const result = await response.json();
+        append(`[API] Current LogLevel: ${result.level}`);
+        // Mettre à jour le select aussi
+        const select = document.getElementById('lvl');
+        select.value = result.level;
+        updateStatus(`Niveau actuel: ${result.level}`, '#7cc4ff');
+      } catch (error) {
+        append(`[API] HTTP Error: ${error.message}`);
+        updateStatus(`Erreur HTTP: ${error.message}`, '#ff4d4d');
+      }
+    }
+    
+    function clr(){ log.textContent=''; }
+    function send(){ const v=document.getElementById('inp').value.trim(); if(!v)return; if(v[0]==='$'){ ws.send(JSON.stringify({cmd:'seaker',nmea:v})); } else { try{ ws.send(v) }catch{} } document.getElementById('inp').value=''; }
+    
+    // Charger le niveau actuel au démarrage
+    window.addEventListener('load', () => {
+      setTimeout(getLevelHTTP, 1000); // Attendre que la connexion soit établie
+    });
+    
+    connect();
+  </script>
+</body>
+</html>
+
+
+
+
+

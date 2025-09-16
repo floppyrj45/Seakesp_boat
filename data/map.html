@@ -1,0 +1,475 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Carte ROV</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <style>
+    html,body,#map{height:100%;margin:0}
+    .hud{position:absolute;top:10px;left:10px;background:rgba(0,0,0,0.55);color:#fff;padding:8px 10px;border-radius:6px;font:12px system-ui,Arial;z-index:9999;pointer-events:none}
+    .hud b{color:#7cc4ff}
+    .battery-hud{position:absolute;top:10px;right:10px;background:rgba(0,0,0,0.55);color:#fff;padding:8px 10px;border-radius:6px;font:12px system-ui,Arial;z-index:9999;pointer-events:none;display:flex;align-items:center;gap:8px}
+    .wifi-hud{position:absolute;bottom:10px;left:10px;background:rgba(0,0,0,0.75);color:#fff;padding:8px 10px;border-radius:6px;font:12px system-ui,Arial;z-index:9999;pointer-events:none;display:flex;align-items:center;gap:8px}
+    .wifi-bars{display:flex;gap:2px;align-items:flex-end;height:20px;margin-left:4px}
+    .wifi-bar{width:4px;background:#555;border-radius:1px;transition:all 0.3s}
+    .wifi-bar.active{background:#4CAF50}
+    .wifi-bar:nth-child(1){height:6px}
+    .wifi-bar:nth-child(2){height:10px}
+    .wifi-bar:nth-child(3){height:14px}
+    .wifi-bar:nth-child(4){height:18px}
+    .coords-hud{position:absolute;bottom:10px;right:10px;background:rgba(0,0,0,0.75);color:#fff;padding:8px 10px;border-radius:6px;font:11px system-ui,monospace;z-index:9999;pointer-events:none;max-width:200px}
+    .coords-hud b{color:#ff6666}
+    .coords-hud .coord-line{margin:2px 0}
+    .battery-icon{width:40px;height:20px;border:2px solid #fff;position:relative;border-radius:3px;overflow:hidden;background:rgba(0,0,0,0.3)}
+    .battery-icon::after{content:"";position:absolute;right:-5px;top:50%;transform:translateY(-50%);width:4px;height:10px;background:#fff;border-radius:0 2px 2px 0}
+    .battery-fill{height:100%;transition:width 0.3s ease;background:linear-gradient(90deg,#21c95e,#0aa34f)}
+    .battery-fill.warn{background:linear-gradient(90deg,#ffb020,#ff8a00)}
+    .battery-fill.crit{background:linear-gradient(90deg,#ff4d4d,#e40000)}
+  </style>
+  <script>
+    let map, gpsMarker, targetMarker, targetCircle, rawTargetMarker;
+    const recentGps = [];
+    const recentTgt = [];
+    const recentRawTgt = [];
+    let gpsPolyline, tgtPolyline, rawTgtPolyline;
+    let ws, wsConnected = false;
+    let darkMode = false;
+    
+    // Icône de cible personnalisée (filtrée)
+    const targetIcon = L.divIcon({
+      html: '<div style="background:#ff3333;border:2px solid #fff;border-radius:50%;width:20px;height:20px;position:relative;"><div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:8px;height:8px;background:#fff;border-radius:50%;"></div><div style="position:absolute;top:-2px;left:50%;transform:translateX(-50%);width:2px;height:24px;background:#fff;"></div><div style="position:absolute;left:-2px;top:50%;transform:translateY(-50%);width:24px;height:2px;background:#fff;"></div></div>',
+      className: 'target-icon',
+      iconSize: [20, 20],
+      iconAnchor: [10, 10]
+    });
+    
+    // Icône pour target brut (non filtré)
+    const rawTargetIcon = L.divIcon({
+      html: '<div style="background:#888;border:2px solid #ccc;border-radius:50%;width:16px;height:16px;position:relative;opacity:0.7;"><div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:6px;height:6px;background:#ccc;border-radius:50%;"></div></div>',
+      className: 'raw-target-icon',
+      iconSize: [16, 16],
+      iconAnchor: [8, 8]
+    });
+    
+    function init(){
+      map = L.map('map').setView([47.0, 2.0], 13);
+      
+      // Tuiles standard (clair)
+      const osmLight = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '&copy; OpenStreetMap contributors'
+      });
+      
+      // Tuiles sombres
+      const osmDark = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '&copy; OpenStreetMap contributors, &copy; CartoDB'
+      });
+      
+      // Commencer en mode clair
+      osmLight.addTo(map);
+      
+      // Bouton toggle dark mode
+      L.Control.DarkMode = L.Control.extend({
+        onAdd: function(map) {
+          const btn = L.DomUtil.create('button');
+          btn.innerHTML = '🌙';
+          btn.style.cssText = 'background:#fff;border:2px solid rgba(0,0,0,0.2);border-radius:4px;width:34px;height:34px;font-size:18px;cursor:pointer';
+          btn.onclick = function() {
+            darkMode = !darkMode;
+            if (darkMode) {
+              map.removeLayer(osmLight);
+              osmDark.addTo(map);
+              btn.innerHTML = '☀️';
+              btn.style.background = '#333';
+            } else {
+              map.removeLayer(osmDark);
+              osmLight.addTo(map);
+              btn.innerHTML = '🌙';
+              btn.style.background = '#fff';
+            }
+          };
+          return btn;
+        }
+      });
+      new L.Control.DarkMode({position: 'topright'}).addTo(map);
+      // Overlay OpenSeaMap (balises marines)
+      const seamark = L.tileLayer('https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png', {
+        maxZoom: 18,
+        attribution: 'Map data: &copy; OpenStreetMap, Seamarks: &copy; OpenSeaMap'
+      }).addTo(map);
+      gpsMarker = L.marker([47,2], {title:'GPS'}).addTo(map);
+      rawTargetMarker = L.marker([47,2], {title:'TARGET (brut)', opacity:0.6, icon: rawTargetIcon}).addTo(map);
+      targetMarker = L.marker([47,2], {title:'TARGETF (filtré)', opacity:0.9, icon: targetIcon}).addTo(map);
+      targetCircle = L.circle([47,2], {radius:5, color:'#f33', fillColor:'#f33', fillOpacity:0.15}).addTo(map);
+      gpsPolyline = L.polyline([], {color:'#3cf', weight:3, opacity:0.7}).addTo(map);
+      rawTgtPolyline = L.polyline([], {color:'#888', weight:1, opacity:0.5, dashArray:'2,2'}).addTo(map);
+      tgtPolyline = L.polyline([], {color:'#f66', weight:2, opacity:0.6, dashArray:'4,4'}).addTo(map);
+      connectWs();
+      refreshHud(); 
+      setInterval(refreshHud, 1000); // Mise à jour plus fréquente pour meilleure réactivité
+    }
+    function connectWs(){
+      try{
+        ws = new WebSocket(`ws://${location.hostname}:81/`);
+        ws.onopen = ()=>{ wsConnected = true; };
+        ws.onclose = ()=>{ wsConnected = false; setTimeout(connectWs, 1000); };
+        ws.onmessage = (ev)=>{
+          try{
+            const msg = JSON.parse(ev.data);
+            if (msg.gps) updateGPS(msg.gps);
+            if (msg.targetf) {
+              console.log('WS targetf received:', msg.targetf);
+              // Si c'est filtré, mettre à jour targetF
+              if (msg.targetf.filtered) {
+                updateTargetF(msg.targetf);
+              } else {
+                // Sinon c'est le target brut
+                updateRawTarget(msg.targetf);
+              }
+            }
+            // Mise à jour du RSSI reçu via WebSocket
+            if (msg.rssi !== undefined) {
+              updateWifiDisplay(msg.rssi);
+            }
+          }catch(e){ console.error('WS parse error:', e); }
+        };
+      }catch(e){ console.log(e); setTimeout(connectWs, 1000); }
+    }
+    function updateWifiDisplay(rssi) {
+      if (rssi === undefined || rssi === null) return;
+      
+      let icon = '📡', quality = 'Déconnecté';
+      // Réinitialiser les barres
+      for (let i = 1; i <= 4; i++) {
+        const bar = document.getElementById(`bar${i}`);
+        if (bar) bar.className = 'wifi-bar';
+      }
+      
+      if (rssi !== 0) {
+        let bars = 0;
+        let barColor = '#555';
+        
+        if (rssi >= -50) { 
+          icon = '📶'; 
+          quality = 'Excellent'; 
+          bars = 4;
+          barColor = '#4CAF50';
+        } else if (rssi >= -60) { 
+          icon = '📶'; 
+          quality = 'Très bon'; 
+          bars = 3;
+          barColor = '#8BC34A';
+        } else if (rssi >= -70) { 
+          icon = '📶'; 
+          quality = 'Bon'; 
+          bars = 2;
+          barColor = '#FFC107';
+        } else if (rssi >= -80) { 
+          icon = '📶'; 
+          quality = 'Faible'; 
+          bars = 1;
+          barColor = '#FF9800';
+        } else { 
+          icon = '📵'; 
+          quality = 'Très faible'; 
+          bars = 1;
+          barColor = '#F44336';
+        }
+        
+        // Animer les barres actives
+        for (let i = 1; i <= bars; i++) {
+          const bar = document.getElementById(`bar${i}`);
+          if (bar) {
+            bar.className = 'wifi-bar active';
+            bar.style.backgroundColor = barColor;
+          }
+        }
+        
+        // Mise à jour du texte
+        const wifiIcon = document.getElementById('wifi-icon');
+        const wifiQuality = document.getElementById('wifi-quality');
+        const wifiRssi = document.getElementById('wifi-rssi');
+        
+        if (wifiIcon) wifiIcon.textContent = icon;
+        if (wifiQuality) wifiQuality.textContent = quality;
+        if (wifiRssi) wifiRssi.textContent = rssi + ' dBm';
+      }
+      
+      console.log('WiFi updated via WS - RSSI:', rssi, 'Quality:', quality);
+    }
+    
+    function updateGPS(g){
+      if (!g || !g.valid) return;
+      const lat=g.lat, lon=g.lon; gpsMarker.setLatLng([lat,lon]);
+      recentGps.push([lat,lon]); if (recentGps.length>5) recentGps.shift();
+      gpsPolyline.setLatLngs(recentGps);
+      let mlat=0, mlon=0; for (const p of recentGps){ mlat+=p[0]; mlon+=p[1]; }
+      mlat/=recentGps.length; mlon/=recentGps.length;
+      const c = map.getCenter(); const dLat=Math.abs(c.lat-mlat), dLon=Math.abs(c.lng-mlon);
+      if (dLat>0.0002 || dLon>0.0002) map.panTo([mlat,mlon], {animate:true,duration:0.4});
+      
+      // ✅ Mettre à jour le heading GPS dans le HUD en temps réel
+      if (g.hdg !== undefined && g.hdg !== null) {
+        console.log('GPS heading updated via WS:', g.hdg);
+        // Le HUD sera mis à jour par refreshHud() mais on peut forcer ici
+        updateHeadingInHud(g.hdg);
+      }
+    }
+    
+    // Fonction helper pour mettre à jour seulement le heading dans le HUD
+    function updateHeadingInHud(heading) {
+      const hud = document.getElementById('hud');
+      if (hud && hud.innerHTML) {
+        // Remplacer seulement la ligne CAP GPS dans le HUD existant
+        const currentHtml = hud.innerHTML;
+        const headingLine = `<div><b>CAP GPS</b> <span style="background:#2563eb;color:white;padding:2px 6px;border-radius:4px;font-weight:bold;margin-left:4px">${heading?.toFixed?.(1) || '--'}°</span></div>`;
+        
+        // Regex pour remplacer la ligne CAP GPS existante
+        const updatedHtml = currentHtml.replace(/<div><b>CAP GPS<\/b>.*?<\/div>/, headingLine);
+        
+        if (updatedHtml !== currentHtml) {
+          hud.innerHTML = updatedHtml;
+        }
+      }
+    }
+    let lastRawTargetLat = null, lastRawTargetLon = null;
+    function updateRawTarget(t){
+      if (!t || typeof t.lat !== 'number' || typeof t.lon !== 'number') {
+        return;
+      }
+      
+      const lat = t.lat;
+      const lon = t.lon;
+      
+      // Vérifier si la position a changé
+      const posChanged = (lastRawTargetLat === null || lastRawTargetLon === null ||
+                         Math.abs(lastRawTargetLat - lat) > 0.000001 || 
+                         Math.abs(lastRawTargetLon - lon) > 0.000001);
+      
+      if (posChanged) {
+        console.log('Raw target:', {lat: lat.toFixed(6), lon: lon.toFixed(6)});
+        
+        // Mise à jour du marqueur brut
+        rawTargetMarker.setLatLng([lat, lon]);
+        
+        // Mise à jour de la trace brute
+        if (recentRawTgt.length === 0 || 
+            Math.abs(recentRawTgt[recentRawTgt.length-1][0] - lat) > 0.00001 || 
+            Math.abs(recentRawTgt[recentRawTgt.length-1][1] - lon) > 0.00001) {
+          recentRawTgt.push([lat, lon]); 
+          if (recentRawTgt.length > 20) recentRawTgt.shift();
+          rawTgtPolyline.setLatLngs(recentRawTgt);
+        }
+        
+        lastRawTargetLat = lat;
+        lastRawTargetLon = lon;
+      }
+    }
+    
+    let lastTargetLat = null, lastTargetLon = null;
+    function updateTargetF(t){
+      if (!t || typeof t.lat !== 'number' || typeof t.lon !== 'number') {
+        console.warn('Invalid target data:', t);
+        return;
+      }
+      
+      const lat = t.lat;
+      const lon = t.lon;
+      const r95 = t.r95_m || 5;
+      
+      // Vérifier si la position a vraiment changé
+      const posChanged = (lastTargetLat === null || lastTargetLon === null ||
+                         Math.abs(lastTargetLat - lat) > 0.000001 || 
+                         Math.abs(lastTargetLon - lon) > 0.000001);
+      
+      if (posChanged) {
+        console.log('Target moved to:', {lat: lat.toFixed(6), lon: lon.toFixed(6), r95: r95.toFixed(1), filtered: t.filtered || false});
+        
+        // Mise à jour des marqueurs
+        targetMarker.setLatLng([lat, lon]);
+        targetCircle.setLatLng([lat, lon]); 
+        targetCircle.setRadius(r95);
+        
+        // Mise à jour de la trace
+        if (recentTgt.length === 0 || 
+            Math.abs(recentTgt[recentTgt.length-1][0] - lat) > 0.00001 || 
+            Math.abs(recentTgt[recentTgt.length-1][1] - lon) > 0.00001) {
+          recentTgt.push([lat, lon]); 
+          if (recentTgt.length > 15) recentTgt.shift();
+          tgtPolyline.setLatLngs(recentTgt);
+        }
+        
+        // Mise à jour des coordonnées affichées
+        document.getElementById('targetf-lat').textContent = lat.toFixed(6);
+        document.getElementById('targetf-lon').textContent = lon.toFixed(6);
+        document.getElementById('targetf-r95').textContent = r95.toFixed(1) + ' m';
+        
+        lastTargetLat = lat;
+        lastTargetLon = lon;
+      }
+    }
+    async function refreshHud(){
+      try{
+        const r = await fetch('/api/telemetry', {cache:'no-store'});
+        const j = await r.json();
+        const hud = document.getElementById('hud');
+        // Déterminer la couleur du statut GPS
+        let gpsStatusBadge = '';
+        if (j.gps?.status) {
+          const statusColors = {
+            'RTK Fix': '#4CAF50',
+            'RTK Float': '#FFC107',
+            'DGPS': '#03A9F4',
+            'Natural': '#9E9E9E'
+          };
+          const color = statusColors[j.gps.status] || '#9E9E9E';
+          gpsStatusBadge = `<span style="background:${color};color:${j.gps.status === 'RTK Float' ? 'black' : 'white'};padding:1px 4px;border-radius:8px;font-size:10px;margin-left:4px">${j.gps.status}</span>`;
+        }
+        
+        hud.innerHTML = `
+          <div><b>IP</b> ${j.ip||''}</div>
+          <div><b>TCP</b> Port 10110 ${wsConnected?'(WS OK)':'(WS NOK)'}</div>
+          <div><b>GPS</b> ${j.gps?.valid? 'OK':'NOK'}${gpsStatusBadge} | sats ${j.gps?.sats||0} | hdop ${j.gps?.hdop||'-'}</div>
+          <div><b>CAP GPS</b> <span style="background:#2563eb;color:white;padding:2px 6px;border-radius:4px;font-weight:bold;margin-left:4px">${j.gps?.hdg?.toFixed?.(1) || '--'}°</span></div>
+          <div><b>SEAKER</b> ${j.seaker?.status||''} | ang ${j.seaker?.angle?.toFixed?.(1)||'-'}° | dist ${j.seaker?.dist?.toFixed?.(1)||'-'} m</div>
+          <div><b>NTRIP</b> ${j.ntrip?.enabled? 'ON':'OFF'} ${j.ntrip?.mount||''} ${j.ntrip?.streaming? '(stream)':''}</div>
+        `;
+        
+        // Mise à jour du GPS depuis l'API
+        if (j.gps && j.gps.valid) {
+          updateGPS({valid: true, lat: j.gps.lat, lon: j.gps.lon});
+        }
+        
+        // Mise à jour du targetF depuis l'API (fallback si WebSocket ne fonctionne pas)
+        if (j.targetf && typeof j.targetf.lat === 'number' && typeof j.targetf.lon === 'number') {
+          console.log('API targetf:', j.targetf);
+          // L'API renvoie toujours la dernière position connue (filtrée ou non)
+          updateRawTarget(j.targetf);
+          // On considère que si c'est dans l'API, c'est la dernière position valide
+          updateTargetF(j.targetf);
+          
+          // Mise à jour des coordonnées affichées (au cas où updateTargetF ne se déclenche pas)
+          document.getElementById('targetf-lat').textContent = j.targetf.lat.toFixed(6);
+          document.getElementById('targetf-lon').textContent = j.targetf.lon.toFixed(6);
+          document.getElementById('targetf-r95').textContent = (j.targetf.r95_m || 0).toFixed(1) + ' m';
+        }
+        
+        // Mise à jour de la batterie (max 11.2V)
+        if (j.power) {
+          const v = j.power.voltage;
+          const i = j.power.current_mA;
+          const pct = Math.max(0, Math.min(100, ((v - 9.2) / (11.2 - 9.2)) * 100));
+          const fill = document.getElementById('battery-fill');
+          fill.style.width = pct + '%';
+          // Seuils ajustés: critique < 9.5V, warning < 10.0V
+          fill.className = 'battery-fill' + (v < 9.5 ? ' crit' : (v < 10.0 ? ' warn' : ''));
+          document.getElementById('battery-voltage').textContent = v.toFixed(2) + ' V';
+          document.getElementById('battery-current').textContent = i.toFixed(0) + ' mA';
+        }
+        
+        // Mise à jour du signal WiFi
+        if (j.rssi !== undefined && j.rssi !== null) {
+          const rssi = j.rssi;
+          let icon = '📡', quality = 'Déconnecté';
+          // Réinitialiser les barres
+          for (let i = 1; i <= 4; i++) {
+            document.getElementById(`bar${i}`).className = 'wifi-bar';
+          }
+          
+          if (rssi !== 0) {
+            let bars = 0;
+            let barColor = '#555';
+            
+            if (rssi >= -50) { 
+              icon = '📶'; 
+              quality = 'Excellent'; 
+              bars = 4;
+              barColor = '#4CAF50';
+            } else if (rssi >= -60) { 
+              icon = '📶'; 
+              quality = 'Très bon'; 
+              bars = 3;
+              barColor = '#8BC34A';
+            } else if (rssi >= -70) { 
+              icon = '📶'; 
+              quality = 'Bon'; 
+              bars = 2;
+              barColor = '#FFC107';
+            } else if (rssi >= -80) { 
+              icon = '📵'; 
+              quality = 'Faible'; 
+              bars = 1;
+              barColor = '#FF9800';
+            } else { 
+              icon = '📵'; 
+              quality = 'Très faible'; 
+              bars = 1;
+              barColor = '#F44336';
+            }
+            
+            // Activer les barres correspondantes
+            for (let i = 1; i <= bars; i++) {
+              const bar = document.getElementById(`bar${i}`);
+              bar.className = 'wifi-bar active';
+              bar.style.background = barColor;
+            }
+            
+            document.getElementById('wifi-icon').style.color = barColor;
+          } else {
+            icon = '❌';
+            quality = 'Déconnecté';
+            document.getElementById('wifi-icon').style.color = '#999';
+          }
+          
+          document.getElementById('wifi-icon').textContent = icon;
+          document.getElementById('wifi-quality').textContent = quality;
+          document.getElementById('wifi-rssi').textContent = rssi + ' dBm';
+          
+          // Debug
+          console.log('WiFi RSSI:', rssi, 'Quality:', quality);
+        } else {
+          console.log('No RSSI data in API response');
+        }
+      }catch(e){console.error('Erreur refreshHud:', e);}
+    }
+    window.addEventListener('load', init);
+  </script>
+</head>
+<body>
+  <div id="map"></div>
+  <div id="hud" class="hud">...</div>
+  <div id="battery-hud" class="battery-hud">
+    <div class="battery-icon">
+      <div id="battery-fill" class="battery-fill" style="width:0%"></div>
+    </div>
+    <div>
+      <div id="battery-voltage">--.- V</div>
+      <div id="battery-current" style="font-size:10px;opacity:0.8">---- mA</div>
+    </div>
+  </div>
+  <div id="wifi-hud" class="wifi-hud">
+    <div id="wifi-icon" style="font-size:24px">📡</div>
+    <div class="wifi-bars">
+      <div class="wifi-bar" id="bar1"></div>
+      <div class="wifi-bar" id="bar2"></div>
+      <div class="wifi-bar" id="bar3"></div>
+      <div class="wifi-bar" id="bar4"></div>
+    </div>
+    <div>
+      <div id="wifi-quality" style="font-size:13px;font-weight:bold">-</div>
+      <div id="wifi-rssi" style="font-size:11px;opacity:0.9">- dBm</div>
+    </div>
+  </div>
+  <div id="coords-hud" class="coords-hud">
+    <div><b>TARGETF</b></div>
+    <div class="coord-line">Lat: <span id="targetf-lat">--.------</span></div>
+    <div class="coord-line">Lon: <span id="targetf-lon">--.------</span></div>
+    <div class="coord-line">R95: <span id="targetf-r95">--.- m</span></div>
+  </div>
+</body>
+</html>
+
+
