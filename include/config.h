@@ -14,7 +14,7 @@
 
 // PM02 non utilisé: ne pas définir de broches
 
-static const char* kFirmwareVersion = "v0.3.1-ntrip";
+static const char* kFirmwareVersion = "v2.1.0";
 
 
 
