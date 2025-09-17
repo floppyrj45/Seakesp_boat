@@ -188,8 +188,29 @@
           }
         }
         
-        // Affichage SEAKER
-        document.getElementById('seaker').textContent = JSON.stringify(j.seaker,null,2);
+        // Affichage SEAKER + stats TAT si présentes
+        const seakerEl = document.getElementById('seaker');
+        seakerEl.textContent = JSON.stringify(j.seaker, null, 2);
+        if (j.seaker && j.seaker.tat) {
+          const s = j.seaker.tat;
+          const el = document.getElementById('tatstats');
+          if (el) {
+            const ratio = (s.acc2s + s.rej2s) > 0 ? (s.rej2s / (s.acc2s + s.rej2s)) : 0;
+            const pct = Math.round(ratio * 100);
+            el.innerHTML = `
+              <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                <span style="background:#1f2a36;border:1px solid #2c3a49;border-radius:6px;padding:4px 6px">2s: <b>${s.acc2s}</b> ✓ / <b style="color:#ff6666">${s.rej2s}</b> ✗</span>
+                <span style="background:#1f2a36;border:1px solid #2c3a49;border-radius:6px;padding:4px 6px">Total: <b>${s.accTot}</b> ✓ / <b style="color:#ff6666">${s.rejTot}</b> ✗</span>
+                <span style="font-size:11px;color:${pct>20?'#ff6666':'#7cc4ff'}">Rejets: ${pct}%</span>
+              </div>`;
+          }
+          const tatBtn = document.getElementById('tatBtn');
+          if (tatBtn) {
+            const en = !!s.enabled;
+            tatBtn.textContent = en ? 'ON' : 'OFF';
+            tatBtn.style.background = en ? '#10b981' : '#666';
+          }
+        }
         if(j.power){
           const v = j.power.voltage, i = j.power.current_mA;
           
@@ -621,7 +642,21 @@
         console.log('Dashboard heading updated via WS:', heading);
       }
     }
-    
+
+    async function toggleTatFilter(){
+      try{
+        const btn = document.getElementById('tatBtn');
+        if (!btn) return;
+        const cur = btn.textContent === 'ON';
+        const en = !cur;
+        const r = await fetch('/api/tat-filter', {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:'enabled=' + (en?'true':'false')});
+        if (r.ok){
+          btn.textContent = en ? 'ON' : 'OFF';
+          btn.style.background = en ? '#10b981' : '#666';
+        }
+      }catch(e){ console.error('toggleTatFilter error', e); }
+    }
+
     setInterval(refresh, 1000);
     setInterval(updateDateTime, 1000);
     window.addEventListener('load', () => {
@@ -656,6 +691,11 @@
     <div class="card">
       <h2>SEAKER</h2>
       <pre id="seaker">...</pre>
+      <div id="tatstats" style="margin-top:8px;font-size:12px;color:#9fb6c7">—</div>
+      <div style="display:flex;align-items:center;gap:8px;margin-top:6px">
+        <label style="font-size:12px">Filtre TAT:</label>
+        <button id="tatBtn" onclick="toggleTatFilter()" style="background:#666;color:white;border:none;padding:4px 8px;border-radius:3px;cursor:pointer;font-size:11px">...</button>
+      </div>
       <hr style="margin:8px 0;opacity:0.3">
       <div style="margin-top:8px">
         <div style="margin-bottom:8px">

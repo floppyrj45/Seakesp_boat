@@ -29,6 +29,7 @@ extern volatile float gSeakerAngleSigmaDeg; // écart-type angulaire SEAKER (deg
 extern volatile float gSeakerRangeRel;      // erreur relative de distance (fraction, ex 0.005 = 0.5%)
 extern volatile float gKalmanAccelStd;      // bruit process (m/s^2)
 extern volatile float gKalmanGate;          // seuil d'innovation pour rejet (en sigma)
+extern volatile bool gTatFilterEnabled;     // activation du filtre TAT
 
 // Persistence helpers (Preferences)
 void loadWifiFromPrefs();

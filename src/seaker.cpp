@@ -44,22 +44,63 @@ static void parseSTATUS(const String* t, int n) {
 
 static void parseDTPING(const String* t, int n) {
   // Formats observés:
-  // 1) $DTPING,<TOF>,<unk>,<angle_deg>,<distance_dm>,...*CS
+  // 1) $DTPING,<TOF>,<TAT_ms>,<angle_deg>,<distance_dm>,...*CS
   // 2) $DTPING,<angle_deg>,<distance_m>,...*CS (legacy)
   float angleDeg = NAN;
   float distanceM = NAN;
+  int tatMs = -1;
   if (n >= 5 && t[3].length() && t[4].length()) {
+    // Nouveau format avec TAT en millisecondes
+    if (t[2].length()) tatMs = t[2].toInt();
     angleDeg = t[3].toFloat();
     // Distance exprimée en décimètres -> convertir en mètres
     distanceM = t[4].toFloat() / 10.0f;
   } else if (n >= 3 && t[1].length() && t[2].length()) {
+    // Format legacy sans TAT
     angleDeg = t[1].toFloat();
     distanceM = t[2].toFloat();
   }
-  if (isfinite(angleDeg)) gSeaker.lastAngle = angleDeg;
-  if (isfinite(distanceM)) gSeaker.lastDistance = distanceM;
-  if (isfinite(angleDeg) || isfinite(distanceM)) {
+
+  bool hasUseful = (isfinite(angleDeg) || isfinite(distanceM));
+  bool accept = hasUseful;
+  // Validation TAT: accepter uniquement si TAT est proche d'un multiple de 2000 ms
+  // Tolérance par défaut: ±100 ms
+  if (accept && tatMs >= 0 && gTatFilterEnabled) {
+    const int expectedMs = 2000;
+    const int tolMs = 100;
+    int r = tatMs % expectedMs;
+    if (!(r <= tolMs || r >= expectedMs - tolMs)) {
+      accept = false;
+      gSeaker.rejectedTat++;
+    }
+  }
+  if (accept) {
+    if (isfinite(angleDeg)) gSeaker.lastAngle = angleDeg;
+    if (isfinite(distanceM)) gSeaker.lastDistance = distanceM;
     gSeaker.pingCounter++;
+    gSeaker.acceptedPings++;
+  }
+
+  // Rapport périodique (toutes les ~2s) des acceptés/rejetés
+  static unsigned long lastReportMs = 0;
+  static unsigned long lastAcc = 0;
+  static unsigned long lastRej = 0;
+  unsigned long now = millis();
+  if (now - lastReportMs >= 2000) {
+    unsigned long acc2s = gSeaker.acceptedPings - lastAcc;
+    unsigned long rej2s = gSeaker.rejectedTat - lastRej;
+    gSeaker.tatAcc2s = acc2s;
+    gSeaker.tatRej2s = rej2s;
+    lastAcc = gSeaker.acceptedPings;
+    lastRej = gSeaker.rejectedTat;
+    lastReportMs = now;
+    // Construire une trame $SEAK,TATSTAT,acc2s=..,rej2s=..
+    String payload = String("SEAK,TATSTAT,acc2s=") + String(acc2s) + ",rej2s=" + String(rej2s);
+    uint8_t cks = nmeaChecksum(payload);
+    char buf[8]; snprintf(buf, sizeof(buf), "*%02X", cks);
+    String line = String("$") + payload + String(buf);
+    Serial.println(line);
+    consoleBroadcastLine(line);
   }
 }
 

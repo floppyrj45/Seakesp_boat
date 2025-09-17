@@ -6,6 +6,10 @@ struct SeakerState {
   float lastDistance = NAN;
   String lastStatus;
   volatile unsigned long pingCounter = 0; // incrémenté à chaque $DTPING valide
+  volatile unsigned long acceptedPings = 0; // pings acceptés (après filtrage TAT)
+  volatile unsigned long rejectedTat = 0;   // pings rejetés par le filtre TAT
+  volatile unsigned long tatAcc2s = 0;      // acceptés sur la dernière fenêtre ~2s
+  volatile unsigned long tatRej2s = 0;      // rejetés sur la dernière fenêtre ~2s
   // Quelques champs additionnels issus de $STATUS si présents
   float rxFrequency = NAN;
   float snr = NAN;

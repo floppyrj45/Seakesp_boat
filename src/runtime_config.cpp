@@ -20,6 +20,7 @@ volatile float gSeakerAngleSigmaDeg = 3.0f;
 volatile float gSeakerRangeRel = 0.005f; // 0.5%
 volatile float gKalmanAccelStd = 0.5f;
 volatile float gKalmanGate = 4.0f;
+volatile bool gTatFilterEnabled = true;
 
 // UDP target streaming removed
 
@@ -88,6 +89,7 @@ void loadFilterPrefs(){
   if (prefs.isKey("rngrel")) gSeakerRangeRel = prefs.getFloat("rngrel");
   if (prefs.isKey("aStd")) gKalmanAccelStd = prefs.getFloat("aStd");
   if (prefs.isKey("gate")) gKalmanGate = prefs.getFloat("gate");
+  if (prefs.isKey("tatEn")) gTatFilterEnabled = prefs.getBool("tatEn");
   prefs.end();
 }
 
@@ -97,6 +99,7 @@ void saveFilterPrefs(){
   prefs.putFloat("rngrel", gSeakerRangeRel);
   prefs.putFloat("aStd", gKalmanAccelStd);
   prefs.putFloat("gate", gKalmanGate);
+  prefs.putBool("tatEn", gTatFilterEnabled);
   prefs.end();
 }
 

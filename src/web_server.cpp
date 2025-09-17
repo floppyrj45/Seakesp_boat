@@ -11,6 +11,7 @@
 #include "utm.h"
 #include "config.h"
 #include "log_iface.h"
+#include "runtime_config.h"
 
 // Types from main.cpp
 enum SeakerMode { SEAKER_NORMAL, SEAKER_OFFSET, SEAKER_TRANSPONDER };
@@ -78,6 +79,8 @@ static void handleApiTelemetry(){
   if (isfinite(gSeaker.lastDistance)) json += String(gSeaker.lastDistance,1); else json += "null";
   json += ",\"rx_freq\":";
   if (isfinite(gSeaker.rxFrequency)) json += String(gSeaker.rxFrequency,1); else json += "null";
+  // Ajouter statistiques TAT
+  json += ",\"tat\":{\"acc2s\":" + String((unsigned long)gSeaker.tatAcc2s) + ",\"rej2s\":" + String((unsigned long)gSeaker.tatRej2s) + ",\"accTot\":" + String((unsigned long)gSeaker.acceptedPings) + ",\"rejTot\":" + String((unsigned long)gSeaker.rejectedTat) + ",\"enabled\":" + String(gTatFilterEnabled?1:0) + "}";
   json += "},";
   {
     float v=0,i=0; if (readPower(v,i)) {
@@ -134,6 +137,22 @@ void webSetup(){
   // Alias pratique pour l'OTA
   server.on("/ota", [](){ server.sendHeader("Location", "/update", true); server.send(302, "text/plain", ""); });
   server.on("/api/telemetry", handleApiTelemetry);
+  // API simple pour activer/désactiver le filtre TAT
+  server.on("/api/tat-filter", HTTP_GET, [](){
+    String j = String("{\"enabled\":") + String(gTatFilterEnabled?"true":"false") + "}";
+    server.send(200, "application/json", j);
+  });
+  server.on("/api/tat-filter", HTTP_POST, [](){
+    if (server.hasArg("enabled")){
+      String val = server.arg("enabled");
+      gTatFilterEnabled = (val == "true" || val == "1");
+      saveFilterPrefs();
+      String j = String("{\"status\":\"ok\",\"enabled\":") + String(gTatFilterEnabled?"true":"false") + "}";
+      server.send(200, "application/json", j);
+    } else {
+      server.send(400, "application/json", "{\"status\":\"error\",\"message\":\"Missing enabled parameter\"}");
+    }
+  });
   server.on("/api/targetf", [](){
     if (!isnan(gTargetFLat) && !isnan(gTargetFLon) && !isnan(gTargetFR95)){
       String j = String("{\"lat\":") + String(gTargetFLat,7) + ",\"lon\":" + String(gTargetFLon,7) + ",\"r95_m\":" + String(gTargetFR95,2) + "}";
