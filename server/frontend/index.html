@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Bundle ROV - Dashboard</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 2rem; }
+    pre { background: #f6f8fa; padding: 1rem; border-radius: 8px; }
+  </style>
+  <script>
+    let es;
+    function connect() {
+      es = new EventSource('/api/events');
+      es.onmessage = (evt) => {
+        const pre = document.getElementById('log');
+        pre.textContent = (pre.textContent + '\n' + evt.data).slice(-5000);
+      };
+      es.addEventListener('telemetry', (evt) => {
+        try { const msg = JSON.parse(evt.data); renderLatest(msg); } catch {}
+      });
+      es.onerror = () => setTimeout(() => { try { es.close(); } catch {}; connect(); }, 2000);
+    }
+    async function renderLatest(msg) {
+      const res = await fetch('/api/telemetry/latest');
+      const data = await res.json();
+      const latest = document.getElementById('latest');
+      latest.textContent = JSON.stringify(data, null, 2);
+    }
+    window.addEventListener('load', () => { connect(); renderLatest(); });
+  </script>
+  </head>
+<body>
+  <h1>Bundle ROV - Dashboard (PoC)</h1>
+  <p>État des derniers messages par appareil&nbsp;:</p>
+  <pre id="latest">{}</pre>
+  <h2>Flux d'événements</h2>
+  <pre id="log">[SSE]</pre>
+  <p>Endpoint ingestion: <code>POST /api/telemetry</code> avec header <code>X-API-Key</code>.</p>
+  <p>Manifest OTA: <code>/ota/manifest/{device_id}?channel=stable</code>. Binaries: <code>/firmware/...</code>.</p>
+</body>
+</html>
+

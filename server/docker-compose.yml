@@ -1,0 +1,35 @@
+version: "3.9"
+
+services:
+  backend:
+    build: ./backend
+    container_name: rov-backend
+    env_file:
+      - .env
+    environment:
+      - INGEST_API_KEY=${INGEST_API_KEY}
+    volumes:
+      - ./backend/app:/app/app
+      - ./backend/data:/app/data
+      - ./backend/firmware:/app/firmware
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2
+    container_name: rov-proxy
+    depends_on:
+      - backend
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./frontend:/srv/frontend:ro
+    ports:
+      - "80:80"
+      - "443:443"
+    restart: unless-stopped
+
+networks:
+  default:
+    name: rov-net
+

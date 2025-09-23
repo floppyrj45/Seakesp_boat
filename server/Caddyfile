@@ -1,0 +1,29 @@
+:80 {
+  encode gzip
+
+  root * /srv/frontend
+
+  @api path /api/*
+  handle @api {
+    reverse_proxy backend:8000
+  }
+
+  @events path /api/events
+  handle @events {
+    reverse_proxy backend:8000
+  }
+
+  @ota path /ota/*
+  handle @ota {
+    reverse_proxy backend:8000
+  }
+
+  @firmware path /firmware/*
+  handle @firmware {
+    reverse_proxy backend:8000
+  }
+
+  try_files {path} /index.html
+  file_server
+}
+

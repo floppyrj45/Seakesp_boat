@@ -1,0 +1,14 @@
+{
+  "version": "0.0.1",
+  "channel": "stable",
+  "build": "2025-09-23T00:00:00Z",
+  "files": [
+    {
+      "name": "firmware.bin",
+      "url": "/firmware/stable/firmware.bin",
+      "sha256": "REPLACE_WITH_SHA256",
+      "size": 0
+    }
+  ]
+}
+
