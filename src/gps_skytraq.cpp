@@ -140,10 +140,10 @@ static void parseLine(const String& line) {
   else if (type.startsWith("PASHR")) parsePASHR(tokens, idx);
   else if (type.startsWith("PSTI") && tokens[1] == "036") parsePSTI036(tokens, idx);
   
-  // Debug pour voir le fixQuality reçu
-  if (type.endsWith("GGA") && idx > 6) {
-    Serial.printf("[GPS] GGA fixQuality=%s (raw field 6)\n", tokens[6].c_str());
-  }
+  // Debug pour voir le fixQuality reçu (supprimé pour éviter flood)
+  // if (type.endsWith("GGA") && idx > 6) {
+  //   Serial.printf("[GPS] GGA fixQuality=%s (raw field 6)\n", tokens[6].c_str());
+  // }
 }
 
 void gpsBegin(HardwareSerial& serial, uint32_t baud, int rxPin, int txPin) {
@@ -157,22 +157,22 @@ void gpsBegin(HardwareSerial& serial, uint32_t baud, int rxPin, int txPin) {
 
 bool gpsAutoDetectBaud(uint32_t& selectedBaud) {
   if (!gpsSerial) return false;
-  const uint32_t candidates[] = {9600, 19200, 38400, 57600, 115200};
+  const uint32_t candidates[] = {921600, 115200, 57600, 38400, 19200, 9600}; // Tester 921600 en premier
   for (uint32_t b : candidates) {
     gpsSerial->end();
     gpsSerial->begin(b, SERIAL_8N1, gpsCurRx, gpsCurTx);
     unsigned long t0 = millis();
     int hits = 0;
-    while (millis() - t0 < 800) {
+    while (millis() - t0 < 300) { // Réduire timeout à 300ms par baudrate
       if (gpsSerial->available()) {
         String line = gpsSerial->readStringUntil('\n');
         line.trim();
         if (line.startsWith("$") && line.indexOf('*') > 0) {
           hits++;
-          if (hits >= 3) { selectedBaud = b; return true; }
+          if (hits >= 2) { selectedBaud = b; return true; } // Réduire à 2 trames valides
         }
       }
-      delay(10);
+      delay(5); // Réduire délai
     }
   }
   return false;
@@ -205,7 +205,8 @@ void gpsPoll() {
         if (!line.isEmpty()) {
           if (rawBuffer.length() > 8192) rawBuffer.remove(0, rawBuffer.length() - 4096);
           rawBuffer += line + "\n";
-          if (echoRaw) Serial.println(line);
+          // Suppression echo GPS pour éviter flood série à 8Hz
+          // if (echoRaw) Serial.println(line);
           parseLine(line);
         }
       }

@@ -53,6 +53,23 @@
       iconAnchor: [8, 8]
     });
     
+    // Fonction pour créer l'icône GPS avec flèche directionnelle
+    function createGpsArrowIcon(heading = 0) {
+      const isValidHeading = typeof heading === 'number' && isFinite(heading);
+      const rotation = isValidHeading ? heading : 0;
+      
+      return L.divIcon({
+        html: `<div style="transform: rotate(${rotation}deg); transform-origin: center center;">
+                 <div style="width: 0; height: 0; border-left: 8px solid transparent; border-right: 8px solid transparent; border-bottom: 24px solid #0066ff; position: relative; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));">
+                   <div style="position: absolute; top: 18px; left: 50%; transform: translateX(-50%); width: 12px; height: 12px; background: #0066ff; border: 2px solid white; border-radius: 50%; box-shadow: 0 2px 4px rgba(0,0,0,0.3);"></div>
+                 </div>
+               </div>`,
+        className: 'gps-arrow-icon',
+        iconSize: [24, 24],
+        iconAnchor: [12, 12]
+      });
+    }
+    
     function init(){
       map = L.map('map').setView([47.0, 2.0], 13);
       
@@ -100,7 +117,7 @@
         maxZoom: 18,
         attribution: 'Map data: &copy; OpenStreetMap, Seamarks: &copy; OpenSeaMap'
       }).addTo(map);
-      gpsMarker = L.marker([47,2], {title:'GPS'}).addTo(map);
+      gpsMarker = L.marker([47,2], {title:'GPS', icon: createGpsArrowIcon(0)}).addTo(map);
       rawTargetMarker = L.marker([47,2], {title:'TARGET (brut)', opacity:0.6, icon: rawTargetIcon}).addTo(map);
       targetMarker = L.marker([47,2], {title:'TARGETF (filtré)', opacity:0.9, icon: targetIcon}).addTo(map);
       targetCircle = L.circle([47,2], {radius:5, color:'#f33', fillColor:'#f33', fillOpacity:0.15}).addTo(map);
@@ -203,7 +220,18 @@
     
     function updateGPS(g){
       if (!g || !g.valid) return;
-      const lat=g.lat, lon=g.lon; gpsMarker.setLatLng([lat,lon]);
+      const lat=g.lat, lon=g.lon;
+      
+      // Mettre à jour la position du marqueur
+      gpsMarker.setLatLng([lat,lon]);
+      
+      // Mettre à jour l'icône avec l'orientation si heading disponible
+      if (g.hdg !== undefined && g.hdg !== null && isFinite(g.hdg)) {
+        const newIcon = createGpsArrowIcon(g.hdg);
+        gpsMarker.setIcon(newIcon);
+        console.log('GPS marker updated with heading:', g.hdg + '°');
+      }
+      
       recentGps.push([lat,lon]); if (recentGps.length>5) recentGps.shift();
       gpsPolyline.setLatLngs(recentGps);
       let mlat=0, mlon=0; for (const p of recentGps){ mlat+=p[0]; mlon+=p[1]; }
@@ -340,7 +368,7 @@
         
         // Mise à jour du GPS depuis l'API
         if (j.gps && j.gps.valid) {
-          updateGPS({valid: true, lat: j.gps.lat, lon: j.gps.lon});
+          updateGPS({valid: true, lat: j.gps.lat, lon: j.gps.lon, hdg: j.gps.hdg});
         }
         
         // Mise à jour du targetF depuis l'API (fallback si WebSocket ne fonctionne pas)

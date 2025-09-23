@@ -11,8 +11,8 @@ volatile unsigned long gRtcmFwdBytes = 0;
 volatile unsigned long gRtcmLastMs = 0;
 volatile bool gNtripReconnectRequested = false;
 
-String gWifiSsid = "SILENT FLOW";
-String gWifiPass = "0607626279";
+String gWifiSsid = "Twix";
+String gWifiPass = "0620992664";
 
 volatile bool gSeakerInvertAngle = false;
 volatile float gSeakerAngleOffsetDeg = 0.0f;
@@ -36,7 +36,7 @@ String gSeakerConfig[4] = {
 };
 
 void loadWifiFromPrefs(){
-  prefs.begin("wifi", true);
+  prefs.begin("wifi", false);
   if (prefs.isKey("ssid")) gWifiSsid = prefs.getString("ssid");
   if (prefs.isKey("pass")) gWifiPass = prefs.getString("pass");
   prefs.end();
@@ -50,7 +50,7 @@ void saveWifiToPrefs(){
 }
 
 void loadNtripFromPrefs(){
-  prefs.begin("ntrip", true);
+  prefs.begin("ntrip", false);
   if (prefs.isKey("host"))  gNtripHost = prefs.getString("host");
   if (prefs.isKey("port"))  gNtripPort = (uint16_t)prefs.getUShort("port");
   if (prefs.isKey("mount")) gNtripMount = prefs.getString("mount");
@@ -70,7 +70,7 @@ void saveNtripToPrefs(){
 }
 
 void loadSeakerCalibFromPrefs(){
-  prefs.begin("seaker", true);
+  prefs.begin("seaker", false);
   if (prefs.isKey("inv")) gSeakerInvertAngle = prefs.getBool("inv");
   if (prefs.isKey("ofs")) gSeakerAngleOffsetDeg = prefs.getFloat("ofs");
   prefs.end();
@@ -84,7 +84,7 @@ void saveSeakerCalibToPrefs(){
 }
 
 void loadFilterPrefs(){
-  prefs.begin("filter", true);
+  prefs.begin("filter", false);
   if (prefs.isKey("angsd")) gSeakerAngleSigmaDeg = prefs.getFloat("angsd");
   if (prefs.isKey("rngrel")) gSeakerRangeRel = prefs.getFloat("rngrel");
   if (prefs.isKey("aStd")) gKalmanAccelStd = prefs.getFloat("aStd");
@@ -106,7 +106,7 @@ void saveFilterPrefs(){
 // loadTargetUdpFromPrefs/saveTargetUdpToPrefs removed
 
 uint8_t loadLogLevelFromPrefs(){
-  prefs.begin("log", true);
+  prefs.begin("log", false);
   uint8_t lv = prefs.getUChar("level", 255);
   prefs.end();
   return lv;
@@ -119,7 +119,7 @@ void saveLogLevelToPrefs(uint8_t level){
 }
 
 void loadSeakerConfigsFromPrefs(){
-  prefs.begin("seakcfg", true);
+  prefs.begin("seakcfg", false);
   for (int i=0;i<4;i++){
     String key = String("cfg") + String(i);
     if (prefs.isKey(key.c_str())) {

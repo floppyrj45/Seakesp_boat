@@ -146,7 +146,8 @@ void pollSEAKER() {
       if (lineBuf.length()) {
         String line = lineBuf; line.trim(); lineBuf = "";
         if (!line.isEmpty()) {
-          if (echoSeaker) Serial.println(line);
+          // Suppression echo SEAKER pour éviter flood série
+          // if (echoSeaker) Serial.println(line);
           consoleBroadcastLine(line);
           parseSeakerNMEA(line);
         }

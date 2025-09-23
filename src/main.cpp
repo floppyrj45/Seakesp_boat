@@ -44,6 +44,31 @@ static void logMsg(LogLevel lvl, const char* tag, const char* fmt, ...) {
   Serial.printf("[%s][%s] %s\n", lvls, tag, buf);
 }
 
+// Tentative de recovery I2C si SDA reste bloquée à LOW (esclave figé)
+static void tryI2CBusRecovery(int sdaPin, int sclPin) {
+  pinMode(sdaPin, INPUT_PULLUP);
+  pinMode(sclPin, INPUT_PULLUP);
+  delay(2);
+  if (digitalRead(sdaPin) == LOW) {
+    // Générer des pulses sur SCL pour libérer l'esclave
+    for (int i = 0; i < 16 && digitalRead(sdaPin) == LOW; ++i) {
+      pinMode(sclPin, OUTPUT);
+      digitalWrite(sclPin, LOW);
+      delayMicroseconds(6);
+      pinMode(sclPin, INPUT_PULLUP); // relâche SCL (haut via pullup)
+      delayMicroseconds(6);
+    }
+    // Tentative d'un STOP: SDA monte alors que SCL est haut
+    pinMode(sclPin, INPUT_PULLUP);
+    delayMicroseconds(6);
+    pinMode(sdaPin, OUTPUT);
+    digitalWrite(sdaPin, LOW);
+    delayMicroseconds(6);
+    pinMode(sdaPin, INPUT_PULLUP);
+    delayMicroseconds(6);
+  }
+}
+
 // WiFi credentials (dev): try STA from prefs/env later; fallback AP
 // Runtime config provided in runtime_config.cpp
 extern String gWifiSsid;
@@ -536,6 +561,7 @@ static void wifiManagerStep() {
       // Tentative de connexion STA (si pas trop d'échecs)
       if (gWifiSsid.length() > 0) {
         Serial.printf("[WiFi] 🔄 Tentative connexion STA à '%s' (essai %d/3)...\n", gWifiSsid.c_str(), gWifiRetryCount + 1);
+        Serial.printf("[WiFi] Debug: SSID='%s', Pass='%s' (len=%d)\n", gWifiSsid.c_str(), gWifiPass.c_str(), gWifiPass.length());
         WiFi.mode(WIFI_STA);
         WiFi.setSleep(false);
         WiFi.setHostname("seakesp");
@@ -558,13 +584,14 @@ static void wifiManagerStep() {
     case WIFI_CONNECTING:
       if (WiFi.status() == WL_CONNECTED) {
         Serial.printf("[WiFi] ✅ Connecté STA, IP=%s\n", WiFi.localIP().toString().c_str());
+        Serial.printf("🌐 Seaker ESP32 prêt - Interface web: http://%s\n", WiFi.localIP().toString().c_str());
         gWifiState = WIFI_CONNECTED;
         gWifiRetryCount = 0;
         setupWiFiServices();
       } else if (now - gWifiConnectStart > 15000) {
         // Timeout de 15s → essayer mode AP
         gWifiRetryCount++;
-        Serial.printf("[WiFi] ❌ Échec connexion STA (tentative %d)\n", gWifiRetryCount);
+        Serial.printf("[WiFi] ❌ Échec connexion STA (tentative %d), Status=%d\n", gWifiRetryCount, WiFi.status());
         
         if (gWifiRetryCount >= 3) {
           // Après 3 échecs → mode AP permanent
@@ -572,8 +599,9 @@ static void wifiManagerStep() {
           WiFi.disconnect();
           WiFi.mode(WIFI_AP);
           WiFi.softAP(kApSsid, kApPassword);
-          Serial.printf("[WiFi] 📡 Mode AP FALLBACK actif: SSID='%s', IP=%s (connexion externe possible)\n", 
-                        kApSsid, WiFi.softAPIP().toString().c_str());
+        Serial.printf("[WiFi] 📡 Mode AP FALLBACK actif: SSID='%s', IP=%s (connexion externe possible)\n", 
+                      kApSsid, WiFi.softAPIP().toString().c_str());
+        Serial.printf("🌐 Seaker ESP32 en mode AP - Interface web: http://%s\n", WiFi.softAPIP().toString().c_str());
           gWifiState = WIFI_AP_MODE;
           gWifiApFallback = true;
           setupWiFiServices();
@@ -620,9 +648,22 @@ void setup() {
   Serial.print("📅 Build: "); Serial.println(BUILD_DATE);
   Serial.println("Appuyez 'h' pour l'aide CLI.");
 
-  // I2C (INA219) sur SDA=GPIO21, SCL=GPIO22
+  // I2C (INA219) sur SDA=GPIO21, SCL=GPIO22, avec timeout et recovery si bus bloqué
   Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
-  if (gIna219.begin()) {
+  #ifdef ARDUINO
+  Wire.setTimeOut(200); // limite l'attente I2C pour éviter un blocage au boot
+  #endif
+  bool inaOk = gIna219.begin();
+  if (!inaOk) {
+    logMsg(LOG_WARN, "INA219", "init échouée, tentative recovery I2C...");
+    tryI2CBusRecovery(I2C_SDA_PIN, I2C_SCL_PIN);
+    Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
+    #ifdef ARDUINO
+    Wire.setTimeOut(200);
+    #endif
+    inaOk = gIna219.begin();
+  }
+  if (inaOk) {
     gInaReady = true;
     logMsg(LOG_INFO, "INA219", "capteur détecté");
   } else {
@@ -638,7 +679,7 @@ void setup() {
 
   // UARTs
   startSEAKER(SEAKER, 115200, SONAR_RX_PIN, SONAR_TX_PIN);
-  gpsBegin(GPS, 115200, GPS_RX_PIN, GPS_TX_PIN);
+  gpsBegin(GPS, 921600, GPS_RX_PIN, GPS_TX_PIN);
   // Forcer l'écho NMEA GPS et tenter une auto-détection du baud au boot
   gpsSetEchoRaw(true);
   {
@@ -646,7 +687,7 @@ void setup() {
     if (gpsAutoDetectBaud(sel)) {
       Serial.printf("GPS auto-baud OK: %lu\n", (unsigned long)sel);
     } else {
-      Serial.println("GPS auto-baud: échec (115200 conservé)");
+      Serial.println("GPS auto-baud: échec (921600 conservé)");
     }
   }
 
@@ -735,7 +776,8 @@ void loop() {
     int rssi = WiFi.RSSI();
     String rssiJson = "{\"rssi\":" + String(rssi) + "}";
     wsBroadcastJson(rssiJson);
-    Serial.printf("[RSSI] WiFi signal: %d dBm\n", rssi);
+    // Suppression log RSSI périodique pour éviter flood série
+    // Serial.printf("[RSSI] WiFi signal: %d dBm\n", rssi);
     lastRssiPushMs = nowRssi;
   }
   
@@ -950,7 +992,8 @@ void loop() {
       uint8_t cks = nmeaChecksum(payload);
       char buf[8]; snprintf(buf, sizeof(buf), "*%02X\r\n", cks);
       Serial.print("$"); Serial.print(payload); Serial.print(buf);
-      logMsg(LOG_DEBUG, "INA219", "V=%.2fV I=%.1fmA", (double)loadV, (double)current);
+      // Suppression log INA219 périodique pour éviter flood série
+      // logMsg(LOG_DEBUG, "INA219", "V=%.2fV I=%.1fmA", (double)loadV, (double)current);
     }
   // Push GPS et TargetF via WS avec throttle
   {
