@@ -8,6 +8,7 @@ SeakerState gSeaker;
 static bool mockOn = false;
 static float mockBaseAngle = 0.0f, mockBaseDist = 10.0f, mockNoiseAng = 3.0f, mockNoiseDist = 1.5f;
 static bool mockSweep = false; static float mockSweepRate = 0.0f; static unsigned long mockLastMs = 0;
+static float mockAngleAccum = 0.0f; static unsigned long mockStartMs = 0;
 static bool echoSeaker = false;
 
 static uint8_t nmeaChecksum(const String& s) {
@@ -131,10 +132,20 @@ void parseSeakerNMEA(const String& line) {
 
 void pollSEAKER() {
   if (mockOn) {
-    unsigned long now = millis(); double dt = (mockLastMs==0)? 0.0 : (now-mockLastMs)/1000.0; mockLastMs = now;
-    float ang = mockBaseAngle + (mockSweep? (mockSweepRate*dt* (float)(random(0,2)?1:-1)) : 0.0f) + ((float)random(-100,101)/100.0f)*mockNoiseAng;
+    unsigned long now = millis();
+    double dt = (mockLastMs==0)? 0.0 : (now - mockLastMs) / 1000.0; 
+    mockLastMs = now;
+    if (mockSweep) {
+      mockAngleAccum += mockSweepRate * (float)dt;
+      while (mockAngleAccum >= 360.0f) mockAngleAccum -= 360.0f;
+      while (mockAngleAccum < 0.0f) mockAngleAccum += 360.0f;
+    }
+    float ang = mockBaseAngle + (mockSweep ? mockAngleAccum : 0.0f) + ((float)random(-100,101)/100.0f)*mockNoiseAng;
     float dist = max(0.0f, mockBaseDist + ((float)random(-100,101)/100.0f)*mockNoiseDist);
     gSeaker.lastAngle = ang; gSeaker.lastDistance = dist; gSeaker.lastStatus = "MOCK";
+    // Générer un "ping" pour déclencher l'update des frames TARGET/TARGETF
+    gSeaker.pingCounter++;
+    gSeaker.acceptedPings++;
     return;
   }
   if (!seakerSerial) return;
@@ -161,6 +172,10 @@ void pollSEAKER() {
 
 void seakerSetMock(bool enable, float baseAngleDeg, float baseDistanceM, float noiseAngleDeg, float noiseDistanceM, bool sweep, float sweepDegPerSec){
   mockOn = enable; mockBaseAngle=baseAngleDeg; mockBaseDist=baseDistanceM; mockNoiseAng=noiseAngleDeg; mockNoiseDist=noiseDistanceM; mockSweep=sweep; mockSweepRate=sweepDegPerSec; mockLastMs=0;
+  if (enable && mockStartMs == 0) mockStartMs = millis();
+}
+void seakerUpdateMock(float baseAngleDeg, float baseDistanceM){
+  mockBaseAngle = baseAngleDeg; mockBaseDist = baseDistanceM;
 }
 
 void seakerSetEchoRaw(bool enable) { echoSeaker = enable; }

@@ -7,35 +7,104 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <style>
+    :root{
+      --fg:#0b1220;           /* texte par défaut (mode clair) */
+      --fg-muted:#334155;
+      --card-bg:rgba(255,255,255,0.9);
+      --card-brd:1px solid rgba(0,0,0,0.12);
+      --chip-bg:#ffffff;
+      --chip-fg:#0b1220;
+      --accent:#2563eb;       /* bleu */
+      --accent-2:#10b981;     /* vert */
+      --danger:#ef4444;
+      --shadow:0 6px 18px rgba(0,0,0,0.12);
+    }
+    body.theme-dark{
+      --fg:#e6edf3;
+      --fg-muted:#9fb6c7;
+      --card-bg:rgba(12,18,28,0.65);
+      --card-brd:1px solid rgba(255,255,255,0.08);
+      --chip-bg:rgba(255,255,255,0.9);
+      --chip-fg:#0b1220;
+      --shadow:0 8px 22px rgba(0,0,0,0.35);
+    }
     html,body,#map{height:100%;margin:0}
-    .hud{position:absolute;top:10px;left:10px;background:rgba(0,0,0,0.55);color:#fff;padding:8px 10px;border-radius:6px;font:12px system-ui,Arial;z-index:9999;pointer-events:none}
-    .hud b{color:#7cc4ff}
-    .battery-hud{position:absolute;top:10px;right:10px;background:rgba(0,0,0,0.55);color:#fff;padding:8px 10px;border-radius:6px;font:12px system-ui,Arial;z-index:9999;pointer-events:none;display:flex;align-items:center;gap:8px}
-    .wifi-hud{position:absolute;bottom:10px;left:10px;background:rgba(0,0,0,0.75);color:#fff;padding:8px 10px;border-radius:6px;font:12px system-ui,Arial;z-index:9999;pointer-events:none;display:flex;align-items:center;gap:8px}
+    .card{background:var(--card-bg);color:var(--fg);border:var(--card-brd);box-shadow:var(--shadow);border-radius:10px}
+    .hud{position:absolute;top:10px;left:50%;transform:translateX(-50%);padding:10px 12px;font:12px system-ui,Arial;z-index:10050;pointer-events:none}
+    .hud b{color:var(--accent)}
+    .status-hud{position:absolute;bottom:10px;left:10px;padding:8px 10px;font:12px system-ui,Arial;z-index:9999;pointer-events:none;display:flex;align-items:center;gap:10px}
+    .hud,.status-hud,.coords-hud{background:var(--card-bg);border:var(--card-brd);box-shadow:var(--shadow);border-radius:10px;color:var(--fg)}
     .wifi-bars{display:flex;gap:2px;align-items:flex-end;height:20px;margin-left:4px}
-    .wifi-bar{width:4px;background:#555;border-radius:1px;transition:all 0.3s}
-    .wifi-bar.active{background:#4CAF50}
+    .wifi-bar{width:4px;background:#94a3b8;border-radius:1px;transition:all 0.3s}
+    .wifi-bar.active{background:var(--accent-2)}
     .wifi-bar:nth-child(1){height:6px}
     .wifi-bar:nth-child(2){height:10px}
     .wifi-bar:nth-child(3){height:14px}
     .wifi-bar:nth-child(4){height:18px}
-    .coords-hud{position:absolute;bottom:10px;right:10px;background:rgba(0,0,0,0.75);color:#fff;padding:8px 10px;border-radius:6px;font:11px system-ui,monospace;z-index:9999;pointer-events:none;max-width:200px}
-    .coords-hud b{color:#ff6666}
+    .coords-hud{position:absolute;bottom:10px;right:10px;padding:10px 12px;font:11px system-ui,monospace;z-index:10040;pointer-events:none;max-width:220px}
+    .coords-hud b{color:var(--danger)}
     .coords-hud .coord-line{margin:2px 0}
-    .battery-icon{width:40px;height:20px;border:2px solid #fff;position:relative;border-radius:3px;overflow:hidden;background:rgba(0,0,0,0.3)}
-    .battery-icon::after{content:"";position:absolute;right:-5px;top:50%;transform:translateY(-50%);width:4px;height:10px;background:#fff;border-radius:0 2px 2px 0}
+    .battery-icon{width:34px;height:16px;border:2px solid var(--fg);position:relative;border-radius:3px;overflow:hidden;background:transparent;opacity:0.85}
+    .battery-icon::after{content:"";position:absolute;right:-5px;top:50%;transform:translateY(-50%);width:4px;height:10px;background:var(--fg);border-radius:0 2px 2px 0}
     .battery-fill{height:100%;transition:width 0.3s ease;background:linear-gradient(90deg,#21c95e,#0aa34f)}
     .battery-fill.warn{background:linear-gradient(90deg,#ffb020,#ff8a00)}
     .battery-fill.crit{background:linear-gradient(90deg,#ff4d4d,#e40000)}
+    /* Panneau toggles traces */
+    .track-panel{position:absolute;top:50%;left:10px;transform:translateY(-50%);padding:10px 12px;font:12px system-ui,Arial;z-index:9999;pointer-events:auto}
+    .track-panel,.dash-container{background:var(--card-bg);border:var(--card-brd);box-shadow:var(--shadow);border-radius:10px;color:var(--fg)}
+    .track-panel label{display:flex;align-items:center;gap:8px;margin:6px 0}
+    .dash-btn{display:inline-block;background:var(--chip-bg);border:var(--card-brd);border-radius:8px;padding:6px 10px;color:var(--chip-fg);text-decoration:none;font:12px system-ui;cursor:pointer}
+    .ip-chip{background:var(--chip-bg);border:var(--card-brd);border-radius:16px;padding:4px 10px;font:12px system-ui;color:var(--chip-fg);min-width:140px;text-align:center}
+    .toolbar{display:flex;flex-direction:column;gap:10px}
+    .icon-bar{position:absolute;left:10px;top:120px;display:flex;flex-direction:column;gap:6px;z-index:10020}
+    .icon-btn{width:32px;height:32px;border-radius:16px;border:1px solid rgba(0,0,0,0.25);background:var(--card-bg);color:var(--fg);display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:var(--shadow)}
+    .icon-btn.menu-btn{font-weight:bold}
+    .icon-bar.collapsed .icon-btn:not(.menu-btn){display:none}
+    .tool-pop{position:absolute;left:50px;min-width:160px;padding:8px 10px;background:var(--card-bg);border:var(--card-brd);border-radius:8px;box-shadow:var(--shadow);font:12px system-ui;color:var(--fg);z-index:10025}
+    .tool-pop .row{display:flex;align-items:center;gap:6px;margin:4px 0}
+
+    /* Breakpoints */
+    @media (max-width:480px){
+      .hud{font-size:11px; max-width: 280px}
+      .dash-container{max-width: 260px}
+      .ip-chip{display:none}
+      .status-hud{gap:8px; padding:6px 8px}
+    }
+    @media (min-width:481px) and (max-width:1024px){
+      .hud{font-size:12px; max-width: 340px}
+    }
   </style>
   <script>
     let map, gpsMarker, targetMarker, targetCircle, rawTargetMarker;
     const recentGps = [];
     const recentTgt = [];
+    const allGps = [];
+    const allTgt = [];
     const recentRawTgt = [];
-    let gpsPolyline, tgtPolyline, rawTgtPolyline;
+    let gpsPolyline, gpsPolylineAll, tgtPolyline, tgtPolylineAll, rawTgtPolyline;
+    const MAX_GPS_POINTS = 30;
+    const MAX_TGT_POINTS = 30;
+    const MAX_ALL_POINTS = 2000;
+    let showGpsTrack = true;
+    let showTgtTrack = true;
+    let showGpsAll = true;
+    let showTgtAll = true;
     let ws, wsConnected = false;
     let darkMode = false;
+    // Waypoints
+    let waypoints = [];
+    let wpMarkers = [];
+    let wpLayer = null;
+    let wpAddMode = false;
+    let wpVisible = true;
+    let wpConnect = false;
+    let gToolbarEl = null;
+    let followGps = true;  // autopan sur GPS
+    let followRov = false; // autopan sur ROV
+    let rovHeadingDeg = null; // cap calculé du ROV (dérivé des positions)
+    let rovSpeedKn = 0;      // vitesse calculée du ROV (noeuds)
+    let lastTargetTimeMs = null; // horodatage dernière maj ROV
+    let rovHist = []; // historique récent pour vitesse (8s)
     
     // Icône de cible personnalisée (filtrée)
     const targetIcon = L.divIcon({
@@ -72,6 +141,8 @@
     
     function init(){
       map = L.map('map').setView([47.0, 2.0], 13);
+      // Si l'utilisateur déplace la carte, on désactive le suivi GPS
+      map.on('dragstart', ()=>{ followGps = false; });
       
       // Tuiles standard (clair)
       const osmLight = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -107,6 +178,8 @@
               btn.innerHTML = '🌙';
               btn.style.background = '#fff';
             }
+            // Sync thème CSS
+            document.body.classList.toggle('theme-dark', darkMode);
           };
           return btn;
         }
@@ -121,12 +194,198 @@
       rawTargetMarker = L.marker([47,2], {title:'TARGET (brut)', opacity:0.6, icon: rawTargetIcon}).addTo(map);
       targetMarker = L.marker([47,2], {title:'TARGETF (filtré)', opacity:0.9, icon: targetIcon}).addTo(map);
       targetCircle = L.circle([47,2], {radius:5, color:'#f33', fillColor:'#f33', fillOpacity:0.15}).addTo(map);
-      gpsPolyline = L.polyline([], {color:'#3cf', weight:3, opacity:0.7}).addTo(map);
+      // Historique GPS complet en GRIS clair (au fond)
+      gpsPolylineAll = L.polyline([], {color:'#bbbbbb', weight:2, opacity:0.8}).addTo(map);
+      // Trace GPS en BLEU (30 derniers)
+      gpsPolyline = L.polyline([], {color:'#0066ff', weight:3, opacity:0.8}).addTo(map);
+      // Trace brute en gris léger (optionnel)
       rawTgtPolyline = L.polyline([], {color:'#888', weight:1, opacity:0.5, dashArray:'2,2'}).addTo(map);
-      tgtPolyline = L.polyline([], {color:'#f66', weight:2, opacity:0.6, dashArray:'4,4'}).addTo(map);
+      // Historique cible filtrée complet en GRIS clair (au fond)
+      tgtPolylineAll = L.polyline([], {color:'#bbbbbb', weight:2, opacity:0.8}).addTo(map);
+      // Trace cible filtrée en ROUGE (30 derniers points)
+      tgtPolyline = L.polyline([], {color:'#ff3333', weight:2.5, opacity:0.9}).addTo(map);
+      // Assurer que les traces colorées sont au-dessus
+      gpsPolyline.bringToFront();
+      tgtPolyline.bringToFront();
+      targetCircle.bringToFront();
+
+      // Ancien panneau latéral supprimé: tout est géré par la barre d'icônes
+      // Mini barre verticale d'icônes (ouvrir/fermer, ajouter WP)
+      const icons = document.createElement('div'); icons.className='icon-bar';
+      const btnMenu = document.createElement('div'); btnMenu.className='icon-btn menu-btn'; btnMenu.textContent='☰'; btnMenu.title='Réduire/Afficher';
+      const btnAdd = document.createElement('div'); btnAdd.className='icon-btn'; btnAdd.textContent='＋'; btnAdd.title='Ajouter WP';
+      const btnClear = document.createElement('div'); btnClear.className='icon-btn'; btnClear.textContent='🗑️'; btnClear.title='Effacer tous les WP';
+      const btnExport = document.createElement('div'); btnExport.className='icon-btn'; btnExport.textContent='⤴️'; btnExport.title='Exporter GeoJSON';
+      const btnImport = document.createElement('div'); btnImport.className='icon-btn'; btnImport.textContent='⤵️'; btnImport.title='Importer GeoJSON';
+      const btnHome = document.createElement('div'); btnHome.className='icon-btn'; btnHome.textContent='🏠'; btnHome.title='Retour Dashboard';
+      const btnCenter = document.createElement('div'); btnCenter.className='icon-btn'; btnCenter.textContent='🎯'; btnCenter.title='Centrer sur…';
+      const btnWps = document.createElement('div'); btnWps.className='icon-btn'; btnWps.textContent='📍'; btnWps.title='Waypoints';
+      const btnTrace = document.createElement('div'); btnTrace.className='icon-btn'; btnTrace.textContent='🧭'; btnTrace.title='Traces';
+      icons.appendChild(btnMenu);
+      icons.appendChild(btnHome);
+      icons.appendChild(btnCenter);
+      icons.appendChild(btnAdd);
+      icons.appendChild(btnClear);
+      icons.appendChild(btnExport);
+      icons.appendChild(btnImport);
+      icons.appendChild(btnWps);
+      icons.appendChild(btnTrace);
+      document.body.appendChild(icons);
+
+      // Replier/afficher toute la barre
+      btnMenu.onclick = ()=>{ icons.classList.toggle('collapsed'); };
+      // Retour Dashboard
+      btnHome.onclick = ()=>{ location.href = '/'; };
+      // Mini-menu centrage
+      const pop = document.createElement('div'); pop.className='tool-pop'; pop.style.display='none'; document.body.appendChild(pop);
+      function showPop(el, html){ const r = el.getBoundingClientRect(); pop.style.top = (r.top + window.scrollY) + 'px'; pop.style.left = (r.right + 8 + window.scrollX) + 'px'; pop.innerHTML = html; pop.style.display='block'; }
+      function hidePop(){ pop.style.display='none'; }
+      let activePopOwner = null;
+      btnCenter.onclick = ()=>{
+        if (activePopOwner === btnCenter && pop.style.display !== 'none') { hidePop(); return; }
+        showPop(btnCenter, '<div class="row"><button id="c-blue" class="dash-btn">Bleu (GPS)</button></div><div class="row"><button id="c-red" class="dash-btn">Rouge (ROV)</button></div><div class="row"><button id="c-follow-rov" class="dash-btn">Follow ROV</button></div><div class="row"><button id="c-wp" class="dash-btn">Waypoint</button></div>');
+        activePopOwner = btnCenter;
+        const cb=document.getElementById('c-blue'); if(cb) cb.onclick=()=>{ if(gpsMarker){ followRov=false; followGps=true; map.panTo(gpsMarker.getLatLng()); hidePop(); } };
+        const cr=document.getElementById('c-red'); if(cr) cr.onclick=()=>{ if(targetMarker){ followGps=false; followRov=false; map.panTo(targetMarker.getLatLng()); hidePop(); } };
+        const cf=document.getElementById('c-follow-rov'); if(cf) cf.onclick=()=>{ if(targetMarker){ followGps=false; followRov=true; map.panTo(targetMarker.getLatLng()); hidePop(); } };
+        const cw=document.getElementById('c-wp'); if(cw) cw.onclick=()=>{ if(wpMarkers && wpMarkers.length){ followGps=false; map.panTo(wpMarkers[wpMarkers.length-1].getLatLng()); hidePop(); } };
+      };
+      btnAdd.onclick = ()=>{ wpAddMode = true; map.getContainer().style.cursor='crosshair'; };
+      btnClear.onclick = ()=>{ waypoints = []; saveWaypoints(); refreshWaypoints(); };
+      btnExport.onclick = ()=>{ exportWaypoints(); };
+      btnImport.onclick = ()=>{
+        const inp = document.createElement('input'); inp.type='file'; inp.accept='.json,.geojson'; inp.onchange=(ev)=>{ importWaypoints(ev.target.files[0]); }; inp.click();
+      };
+
+      // Initialiser waypoints et gérer l'ajout par clic sur la carte
+      try{
+        const v = localStorage.getItem('map.wps.visible'); if (v!==null) wpVisible = (v==='1');
+        const c = localStorage.getItem('map.wps.connect'); if (c!==null) wpConnect = (c==='1');
+      }catch{}
+      loadWaypoints();
+      refreshWaypoints();
+      map.on('click', (e)=>{
+        if (!wpAddMode) return;
+        addWaypoint(e.latlng.lat, e.latlng.lng);
+        wpAddMode = false; map.getContainer().style.cursor='';
+      });
+      // Popups outils simples pour Waypoints/Traces
+      btnWps.onclick = ()=>{ 
+        if (activePopOwner === btnWps && pop.style.display !== 'none') { hidePop(); return; }
+        showPop(btnWps, '<div class="row"><input id="wp-show2" type="checkbox" '+(wpVisible?'checked':'')+'> Afficher</div><div class="row"><input id="wp-connect2" type="checkbox" '+(wpConnect?'checked':'')+'> Relier</div>');
+        activePopOwner = btnWps;
+        const s=document.getElementById('wp-show2'); if(s) s.onchange=(e)=>{ wpVisible=e.target.checked; refreshWaypoints(); localStorage.setItem('map.wps.visible', wpVisible?'1':'0'); };
+        const c=document.getElementById('wp-connect2'); if(c) c.onchange=(e)=>{ wpConnect=e.target.checked; localStorage.setItem('map.wps.connect', wpConnect?'1':'0'); refreshWaypoints(); };
+      };
+      btnTrace.onclick = ()=>{ 
+        if (activePopOwner === btnTrace && pop.style.display !== 'none') { hidePop(); return; }
+        showPop(btnTrace, '<div class="row"><input id="tgps" type="checkbox" '+(showGpsTrack?'checked':'')+'> GPS (30)</div><div class="row"><input id="tgpsall" type="checkbox" '+(showGpsAll?'checked':'')+'> GPS (long)</div><div class="row"><input id="ttgt" type="checkbox" '+(showTgtTrack?'checked':'')+'> Cible (30)</div><div class="row"><input id="ttgtall" type="checkbox" '+(showTgtAll?'checked':'')+'> Cible (long)</div>');
+        activePopOwner = btnTrace;
+        const f=(id,cb)=>{ const e=document.getElementById(id); if(e) e.onchange=cb; };
+        f('tgps', (e)=>{ showGpsTrack=e.target.checked; updateTrackVisibility(); });
+        f('tgpsall', (e)=>{ showGpsAll=e.target.checked; updateTrackVisibility(); });
+        f('ttgt', (e)=>{ showTgtTrack=e.target.checked; updateTrackVisibility(); });
+        f('ttgtall', (e)=>{ showTgtAll=e.target.checked; updateTrackVisibility(); });
+      };
+      // Fermer au clic en dehors
+      document.addEventListener('click', (ev)=>{
+        if (pop.style.display==='none') return;
+        if (pop.contains(ev.target) || ev.target===activePopOwner) return;
+        hidePop();
+      });
+      // Plus de panneau latéral: icône ☰ en haut de la barre suffit
+      // Sync classe thème à l'ouverture
+      document.body.classList.toggle('theme-dark', darkMode);
       connectWs();
       refreshHud(); 
-      setInterval(refreshHud, 1000); // Mise à jour plus fréquente pour meilleure réactivité
+      // Reforcer rafraîchissement au premier affichage (mobile peut bloquer setInterval au chargement)
+      setTimeout(refreshHud, 800);
+      setInterval(refreshHud, 1500);
+    }
+
+    function updateTrackVisibility(){
+      if (showGpsTrack){ if (!map.hasLayer(gpsPolyline)) gpsPolyline.addTo(map); }
+      else { if (map.hasLayer(gpsPolyline)) map.removeLayer(gpsPolyline); }
+      if (showGpsAll){ if (!map.hasLayer(gpsPolylineAll)) gpsPolylineAll.addTo(map); }
+      else { if (map.hasLayer(gpsPolylineAll)) map.removeLayer(gpsPolylineAll); }
+      if (showTgtTrack){ if (!map.hasLayer(tgtPolyline)) tgtPolyline.addTo(map); }
+      else { if (map.hasLayer(tgtPolyline)) map.removeLayer(tgtPolyline); }
+      if (showTgtAll){ if (!map.hasLayer(tgtPolylineAll)) tgtPolylineAll.addTo(map); }
+      else { if (map.hasLayer(tgtPolylineAll)) map.removeLayer(tgtPolylineAll); }
+    }
+
+    // --- Waypoints helpers ---
+    function loadWaypoints(){
+      try{ const raw = localStorage.getItem('map.wps'); waypoints = raw? JSON.parse(raw): []; }catch{ waypoints = []; }
+    }
+    function saveWaypoints(){ localStorage.setItem('map.wps', JSON.stringify(waypoints||[])); }
+    function addWaypoint(lat, lon){
+      waypoints.push({lat, lon}); saveWaypoints(); refreshWaypoints();
+    }
+    function clearWpLayer(){ if (wpMarkers){ for (const m of wpMarkers){ map.removeLayer(m); } } wpMarkers = []; if (wpLayer){ map.removeLayer(wpLayer); wpLayer=null; } }
+    function refreshWaypoints(){
+      clearWpLayer();
+      if (!wpVisible || !waypoints || waypoints.length===0) { const info=document.getElementById('wp-info'); if(info) info.textContent='0 WP · 0.0 km'; return; }
+      // Générer une étiquette courte A1..Z9
+      function shortName(i){ const letter = String.fromCharCode(65 + (i % 26)); const num = 1 + ((i / 26) | 0) % 9; return letter + num; }
+      for (let i=0;i<waypoints.length;i++){
+        const wp = waypoints[i];
+        const label = shortName(i);
+        const html = `<div style=\"display:flex;align-items:center;gap:4px\"><div style=\"width:10px;height:10px;border:2px solid #111;background:#ffd166;border-radius:50%\"></div><div style=\"font-size:10px;background:#111;color:#fff;padding:1px 3px;border-radius:3px\">${label}</div></div>`;
+        const icon = L.divIcon({html, className:'', iconSize:[26,14], iconAnchor:[13,7]});
+        const mk = L.marker([wp.lat, wp.lon], {icon, title:'Waypoint '+label}).addTo(map);
+        mk.on('click', ()=>{ showWpBearingDistance(wp.lat, wp.lon, label); });
+        wpMarkers.push(mk);
+      }
+      // Polyline optionnelle
+      if (typeof wpConnect !== 'undefined' && wpConnect) {
+        const latlngs = waypoints.map(w=>[w.lat, w.lon]);
+        wpLayer = L.polyline(latlngs, {color:'#111', opacity:0.4, weight:2, dashArray:'4,4'}).addTo(map);
+      }
+      let dist=0; for (let i=1;i<waypoints.length;i++){ dist += haversine(waypoints[i-1], waypoints[i]); }
+      const info=document.getElementById('wp-info'); if(info) info.textContent=`${waypoints.length} WP · ${dist.toFixed(1)} km`;
+    }
+    function haversine(a,b){
+      const R=6371; const dLat=(b.lat-a.lat)*Math.PI/180; const dLon=(b.lon-a.lon)*Math.PI/180; const la1=a.lat*Math.PI/180; const la2=b.lat*Math.PI/180; const s=Math.sin(dLat/2)**2+Math.cos(la1)*Math.cos(la2)*Math.sin(dLon/2)**2; return 2*R*Math.asin(Math.sqrt(s));
+    }
+    function exportWaypoints(fmt){
+      const pts = waypoints||[];
+      fmt = (fmt||'geojson').toLowerCase();
+      if (fmt==='csv'){
+        const header = 'name,lat,lon\n';
+        const rows = pts.map((w,i)=>`${String.fromCharCode(65+(i%26))}${1+((i/26)|0)%9},${w.lat.toFixed(7)},${w.lon.toFixed(7)}`).join('\n');
+        const blob = new Blob([header+rows+'\n'], {type:'text/csv'});
+        const a = document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='waypoints.csv'; a.click(); URL.revokeObjectURL(a.href); return;
+      }
+      if (fmt==='kml'){
+        const placemarks = pts.map((w,i)=>`<Placemark><name>${String.fromCharCode(65+(i%26))}${1+((i/26)|0)%9}</name><Point><coordinates>${w.lon.toFixed(7)},${w.lat.toFixed(7)},0</coordinates></Point></Placemark>`).join('');
+        const kml = `<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document>${placemarks}</Document></kml>`;
+        const blob = new Blob([kml], {type:'application/vnd.google-earth.kml+xml'});
+        const a = document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='waypoints.kml'; a.click(); URL.revokeObjectURL(a.href); return;
+      }
+      // geojson
+      const gj = {type:'FeatureCollection', features:pts.map((w,i)=>({type:'Feature',properties:{name:`${String.fromCharCode(65+(i%26))}${1+((i/26)|0)%9}`},geometry:{type:'Point',coordinates:[w.lon,w.lat]}}))};
+      const blob = new Blob([JSON.stringify(gj,null,2)], {type:'application/json'});
+      const a = document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='waypoints.geojson'; a.click(); URL.revokeObjectURL(a.href);
+    }
+    function showWpBearingDistance(lat, lon, label){
+      // Utilise la dernière position GPS (marker bleu) si dispo via API
+      // Fallback: map center
+      const gps = lastGps || {lat: map.getCenter().lat, lon: map.getCenter().lng};
+      const brg = bearingDeg(gps.lat, gps.lon, lat, lon);
+      const dkm = haversine({lat:gps.lat,lon:gps.lon},{lat,lon});
+      const popupHtml = `<div style="font:12px system-ui"><b>${label}</b><br>Brg: ${brg.toFixed(1)}°<br>Dist: ${(dkm*1000).toFixed(0)} m</div>`;
+      L.popup({autoClose:true, closeButton:true}).setLatLng([lat,lon]).setContent(popupHtml).openOn(map);
+    }
+    function bearingDeg(lat1, lon1, lat2, lon2){
+      const toRad = (x)=>x*Math.PI/180, toDeg=(x)=>x*180/Math.PI;
+      const dLon = toRad(lon2-lon1); const y = Math.sin(dLon)*Math.cos(toRad(lat2));
+      const x = Math.cos(toRad(lat1))*Math.sin(toRad(lat2)) - Math.sin(toRad(lat1))*Math.cos(toRad(lat2))*Math.cos(dLon);
+      let brg = toDeg(Math.atan2(y,x)); if (brg<0) brg+=360; return brg;
+    }
+    async function importWaypoints(file){
+      if (!file) return; const txt = await file.text();
+      try{ const obj = JSON.parse(txt); const feats = obj.type==='FeatureCollection'? obj.features : []; const pts = feats.filter(f=>f.geometry&&f.geometry.type==='Point'); waypoints = pts.map(f=>({lat:f.geometry.coordinates[1], lon:f.geometry.coordinates[0]})); saveWaypoints(); refreshWaypoints(); }catch(e){ console.error('Import WP error', e); }
     }
     function connectWs(){
       try{
@@ -218,9 +477,11 @@
       console.log('WiFi updated via WS - RSSI:', rssi, 'Quality:', quality);
     }
     
+    let lastGps = null;
     function updateGPS(g){
       if (!g || !g.valid) return;
       const lat=g.lat, lon=g.lon;
+      lastGps = {lat, lon};
       
       // Mettre à jour la position du marqueur
       gpsMarker.setLatLng([lat,lon]);
@@ -232,12 +493,17 @@
         console.log('GPS marker updated with heading:', g.hdg + '°');
       }
       
-      recentGps.push([lat,lon]); if (recentGps.length>5) recentGps.shift();
+      recentGps.push([lat,lon]); if (recentGps.length>MAX_GPS_POINTS) recentGps.shift();
       gpsPolyline.setLatLngs(recentGps);
+      // Historique complet GPS (borné)
+      if (allGps.length===0 || Math.abs(allGps[allGps.length-1][0]-lat)>1e-6 || Math.abs(allGps[allGps.length-1][1]-lon)>1e-6){
+        allGps.push([lat,lon]); if (allGps.length>MAX_ALL_POINTS) allGps.shift();
+        gpsPolylineAll.setLatLngs(allGps);
+      }
       let mlat=0, mlon=0; for (const p of recentGps){ mlat+=p[0]; mlon+=p[1]; }
       mlat/=recentGps.length; mlon/=recentGps.length;
       const c = map.getCenter(); const dLat=Math.abs(c.lat-mlat), dLon=Math.abs(c.lng-mlon);
-      if (dLat>0.0002 || dLon>0.0002) map.panTo([mlat,mlon], {animate:true,duration:0.4});
+      if (followGps && (dLat>0.0002 || dLon>0.0002)) map.panTo([mlat,mlon], {animate:true,duration:0.4});
       
       // ✅ Mettre à jour le heading GPS dans le HUD en temps réel
       if (g.hdg !== undefined && g.hdg !== null) {
@@ -326,8 +592,13 @@
             Math.abs(recentTgt[recentTgt.length-1][0] - lat) > 0.00001 || 
             Math.abs(recentTgt[recentTgt.length-1][1] - lon) > 0.00001) {
           recentTgt.push([lat, lon]); 
-          if (recentTgt.length > 15) recentTgt.shift();
+          if (recentTgt.length > MAX_TGT_POINTS) recentTgt.shift();
           tgtPolyline.setLatLngs(recentTgt);
+        }
+        // Historique complet cible filtrée (borné)
+        if (allTgt.length===0 || Math.abs(allTgt[allTgt.length-1][0]-lat)>1e-6 || Math.abs(allTgt[allTgt.length-1][1]-lon)>1e-6){
+          allTgt.push([lat,lon]); if (allTgt.length>MAX_ALL_POINTS) allTgt.shift();
+          tgtPolylineAll.setLatLngs(allTgt);
         }
         
         // Mise à jour des coordonnées affichées
@@ -335,36 +606,68 @@
         document.getElementById('targetf-lon').textContent = lon.toFixed(6);
         document.getElementById('targetf-r95').textContent = r95.toFixed(1) + ' m';
         
+        // Calcul heading/vitesse ROV et centrage si suivi activé
+        const nowMs = Date.now();
+        if (lastTargetLat !== null && lastTargetLon !== null && lastTargetTimeMs !== null){
+          // Lisser la vitesse sur ~8 secondes
+          rovHist.push({t:nowMs, lat, lon});
+          // garder 10s d'historique max
+          const cutoff = nowMs - 8000; // 8s pour lisser
+          rovHist = rovHist.filter(p=>p.t >= cutoff);
+          const first = rovHist[0];
+          const last = rovHist[rovHist.length-1];
+          if (first && last && last.t>first.t){
+            const dKm = haversine({lat:first.lat, lon:first.lon}, {lat:last.lat, lon:last.lon});
+            const dtH = (last.t - first.t) / 3600000;
+            rovSpeedKn = (dKm / Math.max(0.0001, dtH)) * 0.539957; // km/h -> kts
+            rovHeadingDeg = bearingDeg(lastTargetLat, lastTargetLon, lat, lon);
+          }
+        }
+        lastTargetTimeMs = nowMs;
         lastTargetLat = lat;
         lastTargetLon = lon;
+        if (followRov) {
+          map.panTo([lat, lon], {animate:true, duration:0.4});
+        }
       }
     }
     async function refreshHud(){
       try{
         const r = await fetch('/api/telemetry', {cache:'no-store'});
         const j = await r.json();
+        if (!j || typeof j !== 'object') { console.warn('API telemetry vide'); return; }
         const hud = document.getElementById('hud');
-        // Déterminer la couleur du statut GPS
+        // Statut RTK (badge compact)
         let gpsStatusBadge = '';
         if (j.gps?.status) {
-          const statusColors = {
-            'RTK Fix': '#4CAF50',
-            'RTK Float': '#FFC107',
-            'DGPS': '#03A9F4',
-            'Natural': '#9E9E9E'
-          };
+          const statusColors = { 'RTK Fix': '#22c55e', 'RTK Float': '#fbbf24', 'DGPS': '#3b82f6', 'Natural': '#9E9E9E' };
           const color = statusColors[j.gps.status] || '#9E9E9E';
-          gpsStatusBadge = `<span style="background:${color};color:${j.gps.status === 'RTK Float' ? 'black' : 'white'};padding:1px 4px;border-radius:8px;font-size:10px;margin-left:4px">${j.gps.status}</span>`;
+          gpsStatusBadge = `<span style="background:${color};color:${j.gps.status === 'RTK Float' ? 'black' : 'white'};padding:1px 6px;border-radius:10px;font-size:11px;margin-left:6px">${j.gps.status}</span>`;
         }
-        
+
+        // Heure UTC uniquement
+        const now = new Date();
+        const utcDate = now.toLocaleDateString('fr-FR', { day:'2-digit', month:'2-digit', year:'numeric', timeZone:'UTC' });
+        const utcTime = now.toLocaleTimeString('fr-FR', { hour:'2-digit', minute:'2-digit', second:'2-digit', timeZone:'UTC' });
+
+        // Distance corrigée (si target filtrée disponible et GPS connu)
+        let corrM = null;
+        if (j.targetf && typeof j.targetf.lat === 'number' && typeof j.targetf.lon === 'number' && lastGps) {
+          corrM = Math.round(haversine({lat:lastGps.lat, lon:lastGps.lon}, {lat:j.targetf.lat, lon:j.targetf.lon}) * 1000);
+        }
+
+        const gpsLine = `<div><b>GPS</b>${gpsStatusBadge} | sats ${j.gps?.sats??'-'} | hdop ${j.gps?.hdop??'-'} | CAP ${j.gps?.hdg?.toFixed?.(1) ?? '--'}°${j.gps?.speed_kn!==undefined?` | vit ${j.gps.speed_kn.toFixed?.(2)} kts`:''}</div>`;
+        const seakerLine = `<div><b>SEAKER</b> ${j.seaker?.status||''} | ang ${j.seaker?.angle?.toFixed?.(1)||'-'}° | dist ${j.seaker?.dist?.toFixed?.(1)||'-'} m${corrM!==null?` | corr ${corrM} m`:''}</div>`;
+        const rovInfo = `<div><b>ROV</b> cap ${rovHeadingDeg?.toFixed?.(1) ?? '--'}° | vit ${rovSpeedKn?.toFixed?.(2) ?? '0.00'} kts</div>`;
         hud.innerHTML = `
-          <div><b>IP</b> ${j.ip||''}</div>
-          <div><b>TCP</b> Port 10110 ${wsConnected?'(WS OK)':'(WS NOK)'}</div>
-          <div><b>GPS</b> ${j.gps?.valid? 'OK':'NOK'}${gpsStatusBadge} | sats ${j.gps?.sats||0} | hdop ${j.gps?.hdop||'-'}</div>
-          <div><b>CAP GPS</b> <span style="background:#2563eb;color:white;padding:2px 6px;border-radius:4px;font-weight:bold;margin-left:4px">${j.gps?.hdg?.toFixed?.(1) || '--'}°</span></div>
-          <div><b>SEAKER</b> ${j.seaker?.status||''} | ang ${j.seaker?.angle?.toFixed?.(1)||'-'}° | dist ${j.seaker?.dist?.toFixed?.(1)||'-'} m</div>
-          <div><b>NTRIP</b> ${j.ntrip?.enabled? 'ON':'OFF'} ${j.ntrip?.mount||''} ${j.ntrip?.streaming? '(stream)':''}</div>
+          <div><b>UTC</b> ${utcDate} ${utcTime}</div>
+          ${gpsLine}
+          ${seakerLine}
+          ${rovInfo}
         `;
+        // Mise à jour de la puce IP
+        const chip = document.getElementById('ip-chip');
+        if (chip){ chip.textContent = j.ip || 'IP —'; chip.dataset.ip = j.ip || ''; }
         
         // Mise à jour du GPS depuis l'API
         if (j.gps && j.gps.valid) {
@@ -391,11 +694,13 @@
           const i = j.power.current_mA;
           const pct = Math.max(0, Math.min(100, ((v - 9.2) / (11.2 - 9.2)) * 100));
           const fill = document.getElementById('battery-fill');
+          if (fill) {
           fill.style.width = pct + '%';
           // Seuils ajustés: critique < 9.5V, warning < 10.0V
           fill.className = 'battery-fill' + (v < 9.5 ? ' crit' : (v < 10.0 ? ' warn' : ''));
-          document.getElementById('battery-voltage').textContent = v.toFixed(2) + ' V';
-          document.getElementById('battery-current').textContent = i.toFixed(0) + ' mA';
+          }
+          const bv = document.getElementById('battery-voltage'); if (bv) bv.textContent = v.toFixed(2) + ' V';
+          const bi = document.getElementById('battery-current'); if (bi) bi.textContent = i.toFixed(0) + ' mA';
         }
         
         // Mise à jour du signal WiFi
@@ -404,7 +709,8 @@
           let icon = '📡', quality = 'Déconnecté';
           // Réinitialiser les barres
           for (let i = 1; i <= 4; i++) {
-            document.getElementById(`bar${i}`).className = 'wifi-bar';
+            const b = document.getElementById(`bar${i}`);
+            if (b) b.className = 'wifi-bar';
           }
           
           if (rssi !== 0) {
@@ -441,20 +747,20 @@
             // Activer les barres correspondantes
             for (let i = 1; i <= bars; i++) {
               const bar = document.getElementById(`bar${i}`);
+              if (bar) {
               bar.className = 'wifi-bar active';
               bar.style.background = barColor;
+              }
             }
-            
-            document.getElementById('wifi-icon').style.color = barColor;
+            // pas d'icône wifi, on ne met à jour que les barres
           } else {
             icon = '❌';
             quality = 'Déconnecté';
-            document.getElementById('wifi-icon').style.color = '#999';
+            // sans icône
           }
           
-          document.getElementById('wifi-icon').textContent = icon;
-          document.getElementById('wifi-quality').textContent = quality;
-          document.getElementById('wifi-rssi').textContent = rssi + ' dBm';
+          const wq = document.getElementById('wifi-quality'); if (wq) wq.textContent = quality;
+          const wr = document.getElementById('wifi-rssi'); if (wr) wr.textContent = rssi + ' dBm';
           
           // Debug
           console.log('WiFi RSSI:', rssi, 'Quality:', quality);
@@ -469,26 +775,13 @@
 <body>
   <div id="map"></div>
   <div id="hud" class="hud">...</div>
-  <div id="battery-hud" class="battery-hud">
-    <div class="battery-icon">
-      <div id="battery-fill" class="battery-fill" style="width:0%"></div>
-    </div>
-    <div>
-      <div id="battery-voltage">--.- V</div>
-      <div id="battery-current" style="font-size:10px;opacity:0.8">---- mA</div>
-    </div>
-  </div>
-  <div id="wifi-hud" class="wifi-hud">
-    <div id="wifi-icon" style="font-size:24px">📡</div>
+  <div id="status-hud" class="status-hud">
+    <div class="battery-icon"><div id="battery-fill" class="battery-fill" style="width:0%"></div></div>
     <div class="wifi-bars">
       <div class="wifi-bar" id="bar1"></div>
       <div class="wifi-bar" id="bar2"></div>
       <div class="wifi-bar" id="bar3"></div>
       <div class="wifi-bar" id="bar4"></div>
-    </div>
-    <div>
-      <div id="wifi-quality" style="font-size:13px;font-weight:bold">-</div>
-      <div id="wifi-rssi" style="font-size:11px;opacity:0.9">- dBm</div>
     </div>
   </div>
   <div id="coords-hud" class="coords-hud">

@@ -119,7 +119,7 @@ pio run -e esp32dev -t uploadfs --upload-port COM13
 
 ## 🔄 Version actuelle
 
-- **Firmware**: `v2.1.0`  
+- **Firmware**: `v2.2.0`  
 - **Build**: Voir `/about` dans l'interface web
 - **Architecture**: ESP32 DevKitC-32D (Dual Core)
 
@@ -154,8 +154,8 @@ platformio.ini         # Configuration build PlatformIO
 ./release.bat
 
 # Fichiers générés dans releases/
-# - seaker_esp32_v2.1.0.bin (firmware)
-# - littlefs_v2.1.0.bin (interface web)
+# - seaker_esp32_v2.2.0.bin (firmware)
+# - littlefs_v2.2.0.bin (interface web)
 ```
 
 ## 🤝 Contribuer

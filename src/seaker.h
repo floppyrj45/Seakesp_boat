@@ -33,6 +33,9 @@ void seakerSetMock(bool enable, float baseAngleDeg, float baseDistanceM,
                    float noiseAngleDeg = 3.0f, float noiseDistanceM = 1.5f,
                    bool sweep = false, float sweepDegPerSec = 0.0f);
 
+// Met à jour les paramètres de base du mock sans réinitialiser l'état
+void seakerUpdateMock(float baseAngleDeg, float baseDistanceM);
+
 
 
 

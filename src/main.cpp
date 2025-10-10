@@ -14,9 +14,10 @@
 #include "web_server.h"
 #include "telemetry_state.h"
 #include "power.h"
+#include "demo_sim.h"
 
 // 🏷️ Version firmware
-const char* FIRMWARE_VERSION = "2.1.0";
+const char* FIRMWARE_VERSION = "2.2.0";
 const char* BUILD_DATE = __DATE__ " " __TIME__;
 
 // Forward decls (helpers defined later in file)
@@ -696,6 +697,7 @@ void setup() {
   loadNtripFromPrefs();
   loadSeakerCalibFromPrefs();
   loadSeakerConfigsFromPrefs(); // Charger les profils CONFIG SEAKER
+  loadDemoFromPrefs();
 
   // Démarrer le WiFi Manager (gestion automatique STA/AP)
   Serial.println("[WiFi] Démarrage WiFi Manager...");
@@ -715,10 +717,18 @@ void setup() {
   printSysFrame();
   printNtripFrame();
   printGpsSummaryFrame();
+
+  // Mode Démo: initialisation si activé
+  if (gDemoEnabled) {
+    Serial.println("[DEMO] Mode démo activé");
+    demoInit();
+  }
 }
 
 void loop() {
   gpsPoll();
+  // Démo step
+  if (demoIsEnabled()) demoStep();
   // SEAKER handled in its own task
   // Mise à jour immédiate sur nouvel écho SEAKER (sans attendre la fenêtre 2s)
   {

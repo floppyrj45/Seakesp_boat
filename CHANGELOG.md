@@ -1,3 +1,10 @@
+## v2.2.0 - 2025-10-10
+- Mode démo: tracé HELLO stabilisé; paramètres ROV assainis
+- Map: barre d’icônes, waypoints (CSV/GeoJSON/KML), centrage Bleu/Rouge/WP
+- HUD carte: vitesse GPS, cap GPS; suivi ROV; UI mobile améliorée
+- Dashboard: badges GPS (STATUT, CAP), panneau SEAKER compact (ANGLE + Dist. corrigée)
+- Console: filtre texte en direct; réglage niveau de logs via WS/API
+- Divers: harmonisation thème, corrections WS/API, petites optimisations
 # 🚀 CHANGELOG - ROV ESP32 Seaker v2.0
 
 ## 🆕 Version 2.0 - Septembre 2025

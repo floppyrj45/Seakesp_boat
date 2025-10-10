@@ -21,6 +21,7 @@
     <button onclick="getLevelHTTP()">Get level</button>
     <button onclick="clr()">Clear</button>
     <span id="status" style="color:#7cc4ff;margin-left:12px"></span>
+    <input id="filter" placeholder="filtre (contient...)" style="margin-left:auto;min-width:180px" oninput="setFilter(this.value)">
   </div>
   <div id="log"></div>
   <div class="row">
@@ -29,7 +30,9 @@
   </div>
   <script>
     let ws, log=document.getElementById('log');
-    function append(s){ log.textContent += s+"\n"; log.scrollTop = log.scrollHeight; }
+    let filterText = '';
+    function setFilter(v){ filterText = (v||'').toLowerCase(); }
+    function append(s){ if(filterText && s.toLowerCase().indexOf(filterText)===-1) return; log.textContent += s+"\n"; log.scrollTop = log.scrollHeight; }
     function connect(){
       ws = new WebSocket(`ws://${location.hostname}:81/`);
       ws.onopen=()=>append('[WS] connecté');

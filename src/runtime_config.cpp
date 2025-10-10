@@ -14,6 +14,8 @@ volatile bool gNtripReconnectRequested = false;
 String gWifiSsid = "Twix";
 String gWifiPass = "0620992664";
 
+volatile bool gDemoEnabled = false;
+
 volatile bool gSeakerInvertAngle = false;
 volatile float gSeakerAngleOffsetDeg = 0.0f;
 volatile float gSeakerAngleSigmaDeg = 3.0f;
@@ -46,6 +48,27 @@ void saveWifiToPrefs(){
   prefs.begin("wifi", false);
   prefs.putString("ssid", gWifiSsid);
   prefs.putString("pass", gWifiPass);
+  prefs.end();
+}
+
+void loadDemoFromPrefs(){
+  prefs.begin("demo", false);
+  bool has = prefs.isKey("en");
+  if (has) {
+    gDemoEnabled = prefs.getBool("en", false);
+  } else {
+    #ifdef DEMO_DEFAULT
+    gDemoEnabled = true;
+    #else
+    gDemoEnabled = false;
+    #endif
+  }
+  prefs.end();
+}
+
+void saveDemoToPrefs(){
+  prefs.begin("demo", false);
+  prefs.putBool("en", gDemoEnabled);
   prefs.end();
 }
 

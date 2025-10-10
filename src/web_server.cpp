@@ -12,6 +12,7 @@
 #include "config.h"
 #include "log_iface.h"
 #include "runtime_config.h"
+#include "demo_sim.h"
 
 // Types from main.cpp
 enum SeakerMode { SEAKER_NORMAL, SEAKER_OFFSET, SEAKER_TRANSPONDER };
@@ -61,6 +62,8 @@ static void handleApiTelemetry(){
   json += "\"firmware\":{\"version\":\"" + String(FIRMWARE_VERSION) + "\",\"build\":\"" + String(BUILD_DATE) + "\"},";
   
   json += "\"gps\":{\"valid\":" + String(f.valid?1:0) + ",\"lat\":" + String(f.latitude,7) + ",\"lon\":" + String(f.longitude,7) + ",\"hdg\":" + String(isfinite(f.trueHeadingDeg)?f.trueHeadingDeg:f.headingDeg,1) + ",\"sats\":" + String((unsigned)f.satellites) + ",\"hdop\":" + String(isfinite(f.hdop)?f.hdop:0,1);
+  // Ajouter la vitesse en noeuds si disponible
+  if (isfinite(f.speedKnots)) { json += ",\"speed_kn\":" + String(f.speedKnots,2); }
   
   // Ajouter le statut GPS (Natural, RTK Fix, RTK Float)
   String gpsStatus = "Natural";
@@ -137,6 +140,51 @@ void webSetup(){
   // Alias pratique pour l'OTA
   server.on("/ota", [](){ server.sendHeader("Location", "/update", true); server.send(302, "text/plain", ""); });
   server.on("/api/telemetry", handleApiTelemetry);
+  // API DEMO
+  server.on("/api/demo", HTTP_GET, [](){
+    DemoBoatParams bp; DemoRovParams rp;
+    demoGetBoatParams(bp); demoGetRovParams(rp);
+    String json = String("{") +
+      "\"enabled\":" + String(demoIsEnabled()?"true":"false") +
+      ",\"boat\":{\"speed_mps\":" + String(bp.speedMps,2) +
+      ",\"radius_m\":" + String(bp.driftRadiusM,1) +
+      ",\"heading_noise_deg\":" + String(bp.headingNoiseDeg,1) +
+      ",\"circle_period_s\":" + String(bp.circlePeriodS,1) + "}" +
+      ",\"rov\":{\"dist_min\":" + String(rp.distMinM,1) +
+      ",\"dist_max\":" + String(rp.distMaxM,1) +
+      ",\"period_s\":" + String(rp.periodS,1) +
+      ",\"sweep_dps\":" + String(rp.sweepDps,1) +
+      ",\"angle_noise_deg\":" + String(rp.angleNoiseDeg,1) +
+      ",\"dist_noise_m\":" + String(rp.distNoiseM,1) +
+      ",\"base_angle_deg\":" + String(rp.baseAngleDeg,1) + "}}";
+    server.send(200, "application/json", json);
+  });
+  server.on("/api/demo", HTTP_POST, [](){
+    bool changed = false;
+    if (server.hasArg("enabled")) {
+      String v = server.arg("enabled");
+      bool en = (v == "true" || v == "1");
+      demoSetEnabled(en, true);
+      changed = true;
+    }
+    DemoBoatParams bp; DemoRovParams rp; demoGetBoatParams(bp); demoGetRovParams(rp);
+    if (server.hasArg("boat.speed_mps")) { bp.speedMps = server.arg("boat.speed_mps").toFloat(); changed=true; }
+    if (server.hasArg("boat.radius_m")) { bp.driftRadiusM = server.arg("boat.radius_m").toFloat(); changed=true; }
+    if (server.hasArg("boat.heading_noise_deg")) { bp.headingNoiseDeg = server.arg("boat.heading_noise_deg").toFloat(); changed=true; }
+    if (server.hasArg("boat.circle_period_s")) { bp.circlePeriodS = server.arg("boat.circle_period_s").toFloat(); changed=true; }
+    if (server.hasArg("rov.dist_min")) { rp.distMinM = server.arg("rov.dist_min").toFloat(); changed=true; }
+    if (server.hasArg("rov.dist_max")) { rp.distMaxM = server.arg("rov.dist_max").toFloat(); changed=true; }
+    if (server.hasArg("rov.period_s")) { rp.periodS = server.arg("rov.period_s").toFloat(); changed=true; }
+    if (server.hasArg("rov.sweep_dps")) { rp.sweepDps = server.arg("rov.sweep_dps").toFloat(); changed=true; }
+    if (server.hasArg("rov.angle_noise_deg")) { rp.angleNoiseDeg = server.arg("rov.angle_noise_deg").toFloat(); changed=true; }
+    if (server.hasArg("rov.dist_noise_m")) { rp.distNoiseM = server.arg("rov.dist_noise_m").toFloat(); changed=true; }
+    if (server.hasArg("rov.base_angle_deg")) { rp.baseAngleDeg = server.arg("rov.base_angle_deg").toFloat(); changed=true; }
+    if (changed) {
+      demoSetBoatParams(bp, true);
+      demoSetRovParams(rp, true);
+    }
+    server.send(200, "application/json", "{\"status\":\"ok\"}");
+  });
   // API simple pour activer/désactiver le filtre TAT
   server.on("/api/tat-filter", HTTP_GET, [](){
     String j = String("{\"enabled\":") + String(gTatFilterEnabled?"true":"false") + "}";

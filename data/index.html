@@ -17,6 +17,15 @@
     .fill{height:100%;background:linear-gradient(90deg,#21c95e,#0aa34f)}
     .warn{background:linear-gradient(90deg,#ffb020,#ff8a00)}
     .crit{background:linear-gradient(90deg,#ff4d4d,#e40000)}
+    /* Boutons inspirés du README */
+    .btn-row{display:flex;gap:10px;flex-wrap:wrap}
+    .btn{display:inline-flex;align-items:center;gap:8px;padding:10px 14px;border-radius:10px;border:1px solid #1f2a36;text-decoration:none;font-weight:600;font-size:14px;box-shadow:0 6px 16px rgba(0,0,0,0.25);transition:transform .05s ease,filter .2s}
+    .btn:active{transform:translateY(1px)}
+    .btn-primary{background:linear-gradient(135deg,#2563eb,#1d4ed8);color:#fff;border-color:#1d4ed8}
+    .btn-green{background:linear-gradient(135deg,#10b981,#0ea371);color:#0b0f14;border-color:#0ea371}
+    .btn-orange{background:linear-gradient(135deg,#ff9f40,#ff7a18);color:#0b0f14;border-color:#ff7a18}
+    .btn-ghost{background:#0f1622;color:#e6edf3;border-color:#283341}
+    .btn:hover{filter:brightness(1.05)}
   </style>
   <script>
     function cls(v, min, max){ return Math.max(0, Math.min(1, (v-min)/(max-min))); }
@@ -124,7 +133,10 @@
       const now = new Date();
       const dateStr = now.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' });
       const timeStr = now.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-      document.getElementById('datetime').textContent = `${dateStr} ${timeStr}`;
+      const dateUTC = now.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'UTC' });
+      const timeUTC = now.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'UTC' });
+      const el = document.getElementById('datetime');
+      if (el) el.textContent = `Loc ${dateStr} ${timeStr} | UTC ${dateUTC} ${timeUTC}`;
     }
     
     async function refresh(){
@@ -186,11 +198,35 @@
               statusBadge.style.color = 'white';
             }
           }
+          // Chip CAP sous le titre
+          const capChip = document.getElementById('gps-cap-chip');
+          if (capChip) {
+            const h = j.gps.hdg;
+            capChip.textContent = (h!==undefined && h!==null && !isNaN(h)) ? `${h.toFixed(1)}°` : '--°';
+          }
         }
         
         // Affichage SEAKER + stats TAT si présentes
-        const seakerEl = document.getElementById('seaker');
-        seakerEl.textContent = JSON.stringify(j.seaker, null, 2);
+        // Affichage compact (éviter le JSON)
+        const angBadge = document.getElementById('seaker-angle');
+        if (angBadge) {
+          const ang = (j.seaker && j.seaker.angle!=null)? Number(j.seaker.angle).toFixed(1) : '--';
+          angBadge.textContent = ang + '°';
+        }
+        const angText = document.getElementById('seaker-angle-text');
+        if (angText) angText.textContent = (j.seaker && j.seaker.angle!=null)? Number(j.seaker.angle).toFixed(1) : '-';
+        const distSpan = document.getElementById('seaker-dist');
+        if (distSpan) distSpan.textContent = (j.seaker && j.seaker.dist!=null)? Number(j.seaker.dist).toFixed(1) : '-';
+        const statusSpan = document.getElementById('seaker-status');
+        if (statusSpan) statusSpan.textContent = (j.seaker && j.seaker.status)? j.seaker.status : '-';
+        // distance corrigée GPS -> TARGETF si présent
+        const corr = (j.gps && j.gps.valid && j.targetf)?
+          (function(){
+            const dKm = (function(a,b){ const R=6371; const dLat=(b.lat-a.lat)*Math.PI/180; const dLon=(b.lon-a.lon)*Math.PI/180; const la1=a.lat*Math.PI/180; const la2=b.lat*Math.PI/180; const s=Math.sin(dLat/2)**2+Math.cos(la1)*Math.cos(la2)*Math.sin(dLon/2)**2; return 2*R*Math.asin(Math.sqrt(s)); })({lat:j.gps.lat,lon:j.gps.lon},{lat:j.targetf.lat,lon:j.targetf.lon});
+            return Math.round(dKm*1000);
+          })() : null;
+        const corrBadge = document.getElementById('seaker-corr');
+        if (corrBadge) corrBadge.textContent = (corr!=null? `${corr} m` : '-- m');
         if (j.seaker && j.seaker.tat) {
           const s = j.seaker.tat;
           const el = document.getElementById('tatstats');
@@ -672,25 +708,41 @@
 </head>
 <body>
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-    <h1 style="margin:0">🚤 Seakesp Boat v2.1.0</h1>
+    <h1 style="margin:0">🚤 Seakesp Boat v2.2.0</h1>
     <div id="datetime" style="color:#7cc4ff;font-size:14px">--/--/---- --:--:--</div>
   </div>
   <div class="grid">
     <div class="card" style="position:relative">
-      <h2 style="display:flex;align-items:center;justify-content:space-between">
-        GPS
-        <span id="gps-status-badge" style="font-size:11px;padding:2px 8px;border-radius:12px;font-weight:normal">-</span>
-      </h2>
-      <pre id="gps">...</pre>
-      <hr style="margin:8px 0;opacity:0.3">
-      <div style="text-align:center;margin-top:8px">
-        <div style="font-size:11px;color:#7cc4ff;margin-bottom:4px">CAP GPS</div>
-        <div id="gps-heading" style="display:inline-block;background:#2563eb;color:white;padding:8px 16px;border-radius:8px;font-size:18px;font-weight:bold;min-width:60px;border:2px solid #1d4ed8">--°</div>
+      <h2 style="margin:0">GPS</h2>
+      <div style="display:flex;gap:14px;align-items:flex-start;margin:6px 0 10px 0">
+        <div>
+          <div style="font-size:11px;color:#7cc4ff;margin-bottom:4px;text-align:center">STATUT</div>
+          <span id="gps-status-badge" style="display:inline-block;padding:8px 16px;border-radius:12px;font-weight:700;font-size:20px;background:#6b7280;color:#fff;min-width:90px;text-align:center;border:2px solid rgba(255,255,255,0.12)">-</span>
+        </div>
+        <div>
+          <div style="font-size:11px;color:#7cc4ff;margin-bottom:4px;text-align:center">CAP GPS</div>
+          <span id="gps-cap-chip" style="display:inline-block;background:#2563eb;color:white;padding:8px 16px;border-radius:8px;font-size:20px;font-weight:bold;min-width:70px;border:2px solid #1d4ed8;text-align:center">--°</span>
+        </div>
       </div>
+      <pre id="gps">...</pre>
+      <!-- section CAP GPS détaillée supprimée (doublon) -->
     </div>
     <div class="card">
       <h2>SEAKER</h2>
-      <pre id="seaker">...</pre>
+      <div style="display:flex;gap:14px;align-items:center;justify-content:center;margin-top:8px">
+        <div>
+          <div style="font-size:11px;color:#7cc4ff;margin-bottom:4px;text-align:center">ANGLE</div>
+          <div id="seaker-angle" style="display:inline-block;background:#7c3aed;color:white;padding:8px 16px;border-radius:8px;font-size:20px;font-weight:bold;min-width:70px;border:2px solid #6d28d9">--°</div>
+        </div>
+        <div>
+          <div style="font-size:11px;color:#7cc4ff;margin-bottom:4px;text-align:center">DIST. CORRIGÉE</div>
+          <div id="seaker-corr" style="display:inline-block;background:#10b981;color:#0b0f14;padding:8px 16px;border-radius:8px;font-size:20px;font-weight:bold;min-width:90px;border:2px solid #0ea371">-- m</div>
+        </div>
+      </div>
+      <div style="margin-top:10px;font-size:13px;color:#9fb6c7">
+        <div>Status: <span id="seaker-status">-</span></div>
+        <div>Angle: <span id="seaker-angle-text">-</span>° · Dist: <span id="seaker-dist">-</span> m</div>
+      </div>
       <div id="tatstats" style="margin-top:8px;font-size:12px;color:#9fb6c7">—</div>
       <div style="display:flex;align-items:center;gap:8px;margin-top:6px">
         <label style="font-size:12px">Filtre TAT:</label>
@@ -801,10 +853,13 @@
       </div>
     </div>
     <div class="card">
-      <a href="/map" style="color:#7cc4ff;display:block;margin-bottom:8px">🗺️ Ouvrir la carte</a>
-      <a href="/about" style="color:#10b981;display:block;margin-bottom:8px">📖 À propos</a>
-      <a href="/update" style="color:#ff9f40;display:block;margin-bottom:8px">🔄 Mise à jour OTA</a>
-      <a href="mailto:Seakesp@nowyouknow.fr?subject=Feedback Seakesp Boat&body=Version: v2.1.0%0D%0A%0D%0A[Décrivez votre problème ou suggestion ici]" style="color:#9ca3af;display:block" title="Reporter un bug ou envoyer un feedback">📧 Contact Support</a>
+      <div class="btn-row">
+        <a class="btn btn-primary" href="/map">🗺️ Ouvrir la carte</a>
+        <a class="btn btn-ghost" href="/console">🖥️ Console</a>
+        <a class="btn btn-green" href="/about">📖 À propos</a>
+        <a class="btn btn-orange" href="/update">🔄 Mise à jour OTA</a>
+        <a class="btn btn-ghost" href="mailto:Seakesp@nowyouknow.fr?subject=Feedback Seakesp Boat&body=Version: v2.2.0%0D%0A%0D%0A[Décrivez votre problème ou suggestion ici]" title="Reporter un bug ou envoyer un feedback">📧 Contact Support</a>
+      </div>
     </div>
   </div>
   <div class="card"><small id="err" style="color:#f77"></small></div>

@@ -20,6 +20,13 @@ extern String gWifiSsid;
 extern String gWifiPass;
 
 
+// Demo mode (simulation) flag
+extern volatile bool gDemoEnabled;
+
+// Demo flag persistence
+void loadDemoFromPrefs();
+void saveDemoToPrefs();
+
 // SEAKER calibrations
 extern volatile bool gSeakerInvertAngle;     // inverser l'angle (miroir)
 extern volatile float gSeakerAngleOffsetDeg; // offset en degrés (ajouté après inversion)
