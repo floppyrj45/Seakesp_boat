@@ -12,7 +12,7 @@ volatile unsigned long gRtcmLastMs = 0;
 volatile bool gNtripReconnectRequested = false;
 
 String gWifiSsid = "Twix";
-String gWifiPass = "0620992664";
+String gWifiPass = "";
 
 volatile bool gDemoEnabled = false;
 
