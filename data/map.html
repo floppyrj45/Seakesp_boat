@@ -62,6 +62,15 @@
     .icon-bar.collapsed .icon-btn:not(.menu-btn){display:none}
     .tool-pop{position:absolute;left:50px;min-width:160px;padding:8px 10px;background:var(--card-bg);border:var(--card-brd);border-radius:8px;box-shadow:var(--shadow);font:12px system-ui;color:var(--fg);z-index:10025}
     .tool-pop .row{display:flex;align-items:center;gap:6px;margin:4px 0}
+    /* Follow overlay arrows */
+    .follow-north{width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-bottom:12px solid #ffffff;filter:drop-shadow(0 1px 2px rgba(0,0,0,0.4))}
+    .arrow-container{display:flex;align-items:center;gap:6px;transform-origin:center center}
+    .tri{width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-bottom:12px solid #37c56b;filter:drop-shadow(0 1px 2px rgba(0,0,0,0.4))}
+    .tri-blue{border-bottom-color:#49a2ff}
+    .tri-red{border-bottom-color:#ff4d4d}
+    .tri-black{border-bottom-color:#111}
+    .arrow-label{font:11px system-ui;color:var(--fg);text-shadow:0 1px 2px rgba(0,0,0,0.6)}
+    .north-dot{width:14px;height:14px;border-radius:50%;border:2px solid #ffffff;box-shadow:0 1px 3px rgba(0,0,0,0.4)}
 
     /* Breakpoints */
     @media (max-width:480px){
@@ -75,7 +84,16 @@
     }
   </style>
   <script>
+    // Parseur JSON tolérant (remplace NaN/Infinity hors guillemets par null)
+    function parseJsonSanitized(raw){
+      try{ return JSON.parse(raw); }catch{}
+      const sanitized = String(raw)
+        .replace(/(^|[:,\[{]\s*)-?Infinity(\s*[,}\]])/gi, '$1null$2')
+        .replace(/(^|[:,\[{]\s*)NaN(\s*[,}\]])/gi, '$1null$2');
+      return JSON.parse(sanitized);
+    }
     let map, gpsMarker, targetMarker, targetCircle, rawTargetMarker;
+    const FOLLOW_RADIUS_M = 50; // rayon du cercle radar (m)
     const recentGps = [];
     const recentTgt = [];
     const allGps = [];
@@ -91,6 +109,21 @@
     let showTgtAll = true;
     let ws, wsConnected = false;
     let darkMode = false;
+    let miniHudVisible = true; // visibilité mini-carte (global)
+    // i18n minimal
+    let appLang = 'fr';
+    try{ const l = localStorage.getItem('app.lang'); if (l) appLang = l; }catch{}
+    const i18n = {
+      fr: { 'home':'Retour Dashboard','mini.toggle':'Mini-carte (on/off)','wp.add':'Ajouter WP','wp.clearAll':'Effacer tous les WP','wp.export':'Exporter','wp.import':'Importer','wp.toolbox':'Waypoints','traces.title':'Traces','center.title':'Centrer sur…','center.blue':'Bleu (GPS)','center.red':'Rouge (ROV)','center.followRov':'Follow ROV','center.waypoint':'Waypoint','wp.show':'Afficher','wp.connect':'Relier','wp.exportLabel':'Export','btn.export':'Exporter','traces.gpsShort':'GPS (30)','traces.gpsLong':'GPS (long)','traces.tgtShort':'Cible (30)','traces.tgtLong':'Cible (long)' },
+      en: { 'home':'Back to Dashboard','mini.toggle':'Mini-map (on/off)','wp.add':'Add WP','wp.clearAll':'Clear all WPs','wp.export':'Export','wp.import':'Import','wp.toolbox':'Waypoints','traces.title':'Tracks','center.title':'Center on…','center.blue':'Blue (GPS)','center.red':'Red (ROV)','center.followRov':'Follow ROV','center.waypoint':'Waypoint','wp.show':'Show','wp.connect':'Connect','wp.exportLabel':'Export','btn.export':'Export','traces.gpsShort':'GPS (30)','traces.gpsLong':'GPS (long)','traces.tgtShort':'Target (30)','traces.tgtLong':'Target (long)' },
+      de: { 'home':'Zurück zum Dashboard','mini.toggle':'Minikarte (an/aus)','wp.add':'WP hinzufügen','wp.clearAll':'Alle WPs löschen','wp.export':'Export','wp.import':'Import','wp.toolbox':'Wegpunkte','traces.title':'Spuren','center.title':'Zentrieren auf…','center.blue':'Blau (GPS)','center.red':'Rot (ROV)','center.followRov':'ROV folgen','center.waypoint':'Wegpunkt','wp.show':'Anzeigen','wp.connect':'Verbinden','wp.exportLabel':'Export','btn.export':'Export','traces.gpsShort':'GPS (30)','traces.gpsLong':'GPS (lang)','traces.tgtShort':'Ziel (30)','traces.tgtLong':'Ziel (lang)' },
+      es: { 'home':'Volver al panel','mini.toggle':'Mini-mapa (on/off)','wp.add':'Añadir WP','wp.clearAll':'Borrar todos','wp.export':'Exportar','wp.import':'Importar','wp.toolbox':'Waypoints','traces.title':'Trazas','center.title':'Centrar en…','center.blue':'Azul (GPS)','center.red':'Rojo (ROV)','center.followRov':'Seguir ROV','center.waypoint':'Waypoint','wp.show':'Mostrar','wp.connect':'Conectar','wp.exportLabel':'Exportar','btn.export':'Exportar','traces.gpsShort':'GPS (30)','traces.gpsLong':'GPS (largo)','traces.tgtShort':'Objetivo (30)','traces.tgtLong':'Objetivo (largo)' },
+      it: { 'home':'Torna al cruscotto','mini.toggle':'Mini-mappa (on/off)','wp.add':'Aggiungi WP','wp.clearAll':'Cancella tutti','wp.export':'Esporta','wp.import':'Importa','wp.toolbox':'Waypoints','traces.title':'Tracce','center.title':'Centra su…','center.blue':'Blu (GPS)','center.red':'Rosso (ROV)','center.followRov':'Segui ROV','center.waypoint':'Waypoint','wp.show':'Mostra','wp.connect':'Collega','wp.exportLabel':'Esporta','btn.export':'Esporta','traces.gpsShort':'GPS (30)','traces.gpsLong':'GPS (lungo)','traces.tgtShort':'Target (30)','traces.tgtLong':'Target (lungo)' },
+      zh: { 'home':'返回仪表板','mini.toggle':'小地图 (开/关)','wp.add':'添加航点','wp.clearAll':'清除航点','wp.export':'导出','wp.import':'导入','wp.toolbox':'航点','traces.title':'轨迹','center.title':'居中…','center.blue':'蓝色 (GPS)','center.red':'红色 (ROV)','center.followRov':'跟随 ROV','center.waypoint':'航点','wp.show':'显示','wp.connect':'连接','wp.exportLabel':'导出','btn.export':'导出','traces.gpsShort':'GPS (30)','traces.gpsLong':'GPS (长)','traces.tgtShort':'目标 (30)','traces.tgtLong':'目标 (长)' },
+      br: { 'home':'Distreiñ da zashboard','mini.toggle':'Mini-kartenn (on/off)','wp.add':'Ouzhpennañ WP','wp.clearAll':'Dilemel an holl WP','wp.export':'Ezporzhiañ','wp.import':'Enporzhiañ','wp.toolbox':'Waypointoù','traces.title':'Roudennoù','center.title':'Kreizhañ war…','center.blue':'Glas (GPS)','center.red':'Ruz (ROV)','center.followRov':'Heuliañ ar ROV','center.waypoint':'Waypoint','wp.show':'Diskouez','wp.connect':'Kevreañ','wp.exportLabel':'Ezporzh','btn.export':'Ezporzh','traces.gpsShort':'GPS (30)','traces.gpsLong':'GPS (hir)','traces.tgtShort':'Bukad (30)','traces.tgtLong':'Bukad (hir)' }
+    };
+    function t(key){ const d = i18n[appLang] || i18n.fr; return d[key] || i18n.fr[key] || key; }
+    function setLang(l){ appLang = l || 'fr'; try{ localStorage.setItem('app.lang', appLang);}catch{}; document.documentElement.setAttribute('lang', appLang); }
     // Waypoints
     let waypoints = [];
     let wpMarkers = [];
@@ -105,6 +138,9 @@
     let rovSpeedKn = 0;      // vitesse calculée du ROV (noeuds)
     let lastTargetTimeMs = null; // horodatage dernière maj ROV
     let rovHist = []; // historique récent pour vitesse (8s)
+    // Waypoint popup dynamique
+    let activeWpIdx = null;
+    let wpExportFormat = 'geojson';
     
     // Icône de cible personnalisée (filtrée)
     const targetIcon = L.divIcon({
@@ -185,6 +221,26 @@
         }
       });
       new L.Control.DarkMode({position: 'topright'}).addTo(map);
+      // Sélecteur de langue (top-right)
+      L.Control.Lang = L.Control.extend({
+        onAdd: function(){
+          const d = L.DomUtil.create('div');
+          d.style.cssText = 'background:#fff;border:2px solid rgba(0,0,0,0.2);border-radius:6px;padding:2px 4px;display:flex;align-items:center;gap:4px;font:12px system-ui;';
+          d.innerHTML = '🌐 <select id="map-lang" style="border:none;background:transparent;outline:none">\
+            <option value="fr">Français</option>\
+            <option value="en">English</option>\
+            <option value="br">Brezhoneg</option>\
+            <option value="zh">中文</option>\
+            <option value="de">Deutsch</option>\
+            <option value="es">Español</option>\
+            <option value="it">Italiano</option>\
+          </select>';
+          L.DomEvent.disableClickPropagation(d);
+          setTimeout(()=>{ const sel=d.querySelector('#map-lang'); if(sel){ sel.value=appLang; sel.onchange=(e)=>{ setLang(e.target.value); }; } },0);
+          return d;
+        }
+      });
+      new L.Control.Lang({position:'topright'}).addTo(map);
       // Overlay OpenSeaMap (balises marines)
       const seamark = L.tileLayer('https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png', {
         maxZoom: 18,
@@ -213,14 +269,15 @@
       // Mini barre verticale d'icônes (ouvrir/fermer, ajouter WP)
       const icons = document.createElement('div'); icons.className='icon-bar';
       const btnMenu = document.createElement('div'); btnMenu.className='icon-btn menu-btn'; btnMenu.textContent='☰'; btnMenu.title='Réduire/Afficher';
-      const btnAdd = document.createElement('div'); btnAdd.className='icon-btn'; btnAdd.textContent='＋'; btnAdd.title='Ajouter WP';
-      const btnClear = document.createElement('div'); btnClear.className='icon-btn'; btnClear.textContent='🗑️'; btnClear.title='Effacer tous les WP';
-      const btnExport = document.createElement('div'); btnExport.className='icon-btn'; btnExport.textContent='⤴️'; btnExport.title='Exporter GeoJSON';
-      const btnImport = document.createElement('div'); btnImport.className='icon-btn'; btnImport.textContent='⤵️'; btnImport.title='Importer GeoJSON';
-      const btnHome = document.createElement('div'); btnHome.className='icon-btn'; btnHome.textContent='🏠'; btnHome.title='Retour Dashboard';
-      const btnCenter = document.createElement('div'); btnCenter.className='icon-btn'; btnCenter.textContent='🎯'; btnCenter.title='Centrer sur…';
-      const btnWps = document.createElement('div'); btnWps.className='icon-btn'; btnWps.textContent='📍'; btnWps.title='Waypoints';
-      const btnTrace = document.createElement('div'); btnTrace.className='icon-btn'; btnTrace.textContent='🧭'; btnTrace.title='Traces';
+      const btnAdd = document.createElement('div'); btnAdd.className='icon-btn'; btnAdd.textContent='＋'; btnAdd.title=t('wp.add');
+      const btnClear = document.createElement('div'); btnClear.className='icon-btn'; btnClear.textContent='🗑️'; btnClear.title=t('wp.clearAll');
+      const btnExport = document.createElement('div'); btnExport.className='icon-btn'; btnExport.textContent='⤴️'; btnExport.title=t('wp.export');
+      const btnImport = document.createElement('div'); btnImport.className='icon-btn'; btnImport.textContent='⤵️'; btnImport.title=t('wp.import');
+      const btnHome = document.createElement('div'); btnHome.className='icon-btn'; btnHome.textContent='🏠'; btnHome.title=t('home');
+      const btnCenter = document.createElement('div'); btnCenter.className='icon-btn'; btnCenter.textContent='🎯'; btnCenter.title=t('center.title');
+      const btnRadar = document.createElement('div'); btnRadar.className='icon-btn'; btnRadar.textContent='📡'; btnRadar.title=t('mini.toggle');
+      const btnWps = document.createElement('div'); btnWps.className='icon-btn'; btnWps.textContent='📍'; btnWps.title=t('wp.toolbox');
+      const btnTrace = document.createElement('div'); btnTrace.className='icon-btn'; btnTrace.textContent='🧭'; btnTrace.title=t('traces.title');
       icons.appendChild(btnMenu);
       icons.appendChild(btnHome);
       icons.appendChild(btnCenter);
@@ -229,6 +286,7 @@
       icons.appendChild(btnExport);
       icons.appendChild(btnImport);
       icons.appendChild(btnWps);
+      icons.appendChild(btnRadar);
       icons.appendChild(btnTrace);
       document.body.appendChild(icons);
 
@@ -243,7 +301,7 @@
       let activePopOwner = null;
       btnCenter.onclick = ()=>{
         if (activePopOwner === btnCenter && pop.style.display !== 'none') { hidePop(); return; }
-        showPop(btnCenter, '<div class="row"><button id="c-blue" class="dash-btn">Bleu (GPS)</button></div><div class="row"><button id="c-red" class="dash-btn">Rouge (ROV)</button></div><div class="row"><button id="c-follow-rov" class="dash-btn">Follow ROV</button></div><div class="row"><button id="c-wp" class="dash-btn">Waypoint</button></div>');
+        showPop(btnCenter, '<div class="row"><button id="c-blue" class="dash-btn">'+t('center.blue')+'</button></div><div class="row"><button id="c-red" class="dash-btn">'+t('center.red')+'</button></div><div class="row"><button id="c-follow-rov" class="dash-btn">'+t('center.followRov')+'</button></div><div class="row"><button id="c-wp" class="dash-btn">'+t('center.waypoint')+'</button></div>');
         activePopOwner = btnCenter;
         const cb=document.getElementById('c-blue'); if(cb) cb.onclick=()=>{ if(gpsMarker){ followRov=false; followGps=true; map.panTo(gpsMarker.getLatLng()); hidePop(); } };
         const cr=document.getElementById('c-red'); if(cr) cr.onclick=()=>{ if(targetMarker){ followGps=false; followRov=false; map.panTo(targetMarker.getLatLng()); hidePop(); } };
@@ -252,15 +310,23 @@
       };
       btnAdd.onclick = ()=>{ wpAddMode = true; map.getContainer().style.cursor='crosshair'; };
       btnClear.onclick = ()=>{ waypoints = []; saveWaypoints(); refreshWaypoints(); };
-      btnExport.onclick = ()=>{ exportWaypoints(); };
+      btnExport.onclick = ()=>{ exportWaypoints(wpExportFormat); };
       btnImport.onclick = ()=>{
         const inp = document.createElement('input'); inp.type='file'; inp.accept='.json,.geojson'; inp.onchange=(ev)=>{ importWaypoints(ev.target.files[0]); }; inp.click();
       };
+      // Toggle mini-carte (cercle + crantages + flèches)
+      try{ const v = localStorage.getItem('map.miniHudVisible'); if (v!==null) miniHudVisible = (v==='1'); }catch{}
+      function setMiniHudVisible(v){ miniHudVisible = !!v; try{ localStorage.setItem('map.miniHudVisible', miniHudVisible?'1':'0'); }catch{}; if(!miniHudVisible){ clearFollowHud(); } }
+      // Indication visuelle
+      function refreshRadarBtn(){ btnRadar.style.opacity = miniHudVisible? '1' : '0.55'; btnRadar.style.filter = miniHudVisible? '' : 'grayscale(0.6)'; }
+      refreshRadarBtn();
+      btnRadar.onclick = ()=>{ setMiniHudVisible(!miniHudVisible); refreshRadarBtn(); };
 
       // Initialiser waypoints et gérer l'ajout par clic sur la carte
       try{
         const v = localStorage.getItem('map.wps.visible'); if (v!==null) wpVisible = (v==='1');
         const c = localStorage.getItem('map.wps.connect'); if (c!==null) wpConnect = (c==='1');
+        const ef = localStorage.getItem('wp.exportFormat'); if (ef) wpExportFormat = ef;
       }catch{}
       loadWaypoints();
       refreshWaypoints();
@@ -272,14 +338,19 @@
       // Popups outils simples pour Waypoints/Traces
       btnWps.onclick = ()=>{ 
         if (activePopOwner === btnWps && pop.style.display !== 'none') { hidePop(); return; }
-        showPop(btnWps, '<div class="row"><input id="wp-show2" type="checkbox" '+(wpVisible?'checked':'')+'> Afficher</div><div class="row"><input id="wp-connect2" type="checkbox" '+(wpConnect?'checked':'')+'> Relier</div>');
+        const fmtSel = (wpExportFormat||'geojson');
+        showPop(btnWps, '<div class="row"><input id="wp-show2" type="checkbox" '+(wpVisible?'checked':'')+'> '+t('wp.show')+'</div>'+
+                           '<div class="row"><input id="wp-connect2" type="checkbox" '+(wpConnect?'checked':'')+'> '+t('wp.connect')+'</div>'+
+                           '<div class="row"><label style="min-width:56px">'+t('wp.exportLabel')+'</label><select id="wp-export-format"><option value="geojson">GeoJSON</option><option value="kml">KML</option><option value="csv">CSV</option></select><button id="wp-export-go" class="dash-btn">'+t('btn.export')+'</button></div>');
         activePopOwner = btnWps;
         const s=document.getElementById('wp-show2'); if(s) s.onchange=(e)=>{ wpVisible=e.target.checked; refreshWaypoints(); localStorage.setItem('map.wps.visible', wpVisible?'1':'0'); };
         const c=document.getElementById('wp-connect2'); if(c) c.onchange=(e)=>{ wpConnect=e.target.checked; localStorage.setItem('map.wps.connect', wpConnect?'1':'0'); refreshWaypoints(); };
+        const sel=document.getElementById('wp-export-format'); if(sel){ sel.value = fmtSel; sel.onchange=(e)=>{ wpExportFormat = e.target.value; try{ localStorage.setItem('wp.exportFormat', wpExportFormat);}catch{} }; }
+        const go=document.getElementById('wp-export-go'); if(go){ go.onclick=()=>{ exportWaypoints(wpExportFormat); }; }
       };
       btnTrace.onclick = ()=>{ 
         if (activePopOwner === btnTrace && pop.style.display !== 'none') { hidePop(); return; }
-        showPop(btnTrace, '<div class="row"><input id="tgps" type="checkbox" '+(showGpsTrack?'checked':'')+'> GPS (30)</div><div class="row"><input id="tgpsall" type="checkbox" '+(showGpsAll?'checked':'')+'> GPS (long)</div><div class="row"><input id="ttgt" type="checkbox" '+(showTgtTrack?'checked':'')+'> Cible (30)</div><div class="row"><input id="ttgtall" type="checkbox" '+(showTgtAll?'checked':'')+'> Cible (long)</div>');
+        showPop(btnTrace, '<div class="row"><input id="tgps" type="checkbox" '+(showGpsTrack?'checked':'')+'> '+t('traces.gpsShort')+'</div><div class="row"><input id="tgpsall" type="checkbox" '+(showGpsAll?'checked':'')+'> '+t('traces.gpsLong')+'</div><div class="row"><input id="ttgt" type="checkbox" '+(showTgtTrack?'checked':'')+'> '+t('traces.tgtShort')+'</div><div class="row"><input id="ttgtall" type="checkbox" '+(showTgtAll?'checked':'')+'> '+t('traces.tgtLong')+'</div>');
         activePopOwner = btnTrace;
         const f=(id,cb)=>{ const e=document.getElementById(id); if(e) e.onchange=cb; };
         f('tgps', (e)=>{ showGpsTrack=e.target.checked; updateTrackVisibility(); });
@@ -334,7 +405,7 @@
         const html = `<div style=\"display:flex;align-items:center;gap:4px\"><div style=\"width:10px;height:10px;border:2px solid #111;background:#ffd166;border-radius:50%\"></div><div style=\"font-size:10px;background:#111;color:#fff;padding:1px 3px;border-radius:3px\">${label}</div></div>`;
         const icon = L.divIcon({html, className:'', iconSize:[26,14], iconAnchor:[13,7]});
         const mk = L.marker([wp.lat, wp.lon], {icon, title:'Waypoint '+label}).addTo(map);
-        mk.on('click', ()=>{ showWpBearingDistance(wp.lat, wp.lon, label); });
+        mk.on('click', ()=>{ activeWpIdx = i; showWpBearingDistance(wp.lat, wp.lon, label); });
         wpMarkers.push(mk);
       }
       // Polyline optionnelle
@@ -369,13 +440,13 @@
       const a = document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='waypoints.geojson'; a.click(); URL.revokeObjectURL(a.href);
     }
     function showWpBearingDistance(lat, lon, label){
-      // Utilise la dernière position GPS (marker bleu) si dispo via API
-      // Fallback: map center
-      const gps = lastGps || {lat: map.getCenter().lat, lon: map.getCenter().lng};
-      const brg = bearingDeg(gps.lat, gps.lon, lat, lon);
-      const dkm = haversine({lat:gps.lat,lon:gps.lon},{lat,lon});
-      const popupHtml = `<div style="font:12px system-ui"><b>${label}</b><br>Brg: ${brg.toFixed(1)}°<br>Dist: ${(dkm*1000).toFixed(0)} m</div>`;
-      L.popup({autoClose:true, closeButton:true}).setLatLng([lat,lon]).setContent(popupHtml).openOn(map);
+      // Référence ROV (target filtrée) si dispo, sinon GPS, sinon centre
+      const ref = (lastTargetLat!=null && lastTargetLon!=null)? {lat:lastTargetLat, lon:lastTargetLon} : (lastGps || {lat: map.getCenter().lat, lon: map.getCenter().lng});
+      const brg = bearingDeg(ref.lat, ref.lon, lat, lon);
+      const dkm = haversine({lat:ref.lat,lon:ref.lon},{lat,lon});
+      const popupHtml = `<div style="font:12px system-ui"><b>${label}</b><br><span id="wp-brg">Brg: ${brg.toFixed(1)}°</span><br><span id="wp-dist">Dist: ${(dkm*1000).toFixed(0)} m</span></div>`;
+      const p = L.popup({autoClose:true, closeButton:true}).setLatLng([lat,lon]).setContent(popupHtml).openOn(map);
+      p.on('remove', ()=>{ activeWpIdx = null; });
     }
     function bearingDeg(lat1, lon1, lat2, lon2){
       const toRad = (x)=>x*Math.PI/180, toDeg=(x)=>x*180/Math.PI;
@@ -393,26 +464,105 @@
         ws.onopen = ()=>{ wsConnected = true; };
         ws.onclose = ()=>{ wsConnected = false; setTimeout(connectWs, 1000); };
         ws.onmessage = (ev)=>{
+          const data = ev?.data;
+          if (typeof data !== 'string') return;
+          const s = data.trim();
+          if (!s) return;
+          if (s[0] !== '{' || s[s.length-1] !== '}') return; // ignorer NMEA/logs
           try{
-            const msg = JSON.parse(ev.data);
+            const msg = JSON.parse(s);
             if (msg.gps) updateGPS(msg.gps);
-            if (msg.targetf) {
-              console.log('WS targetf received:', msg.targetf);
-              // Si c'est filtré, mettre à jour targetF
-              if (msg.targetf.filtered) {
-                updateTargetF(msg.targetf);
-              } else {
-                // Sinon c'est le target brut
-                updateRawTarget(msg.targetf);
-              }
-            }
-            // Mise à jour du RSSI reçu via WebSocket
-            if (msg.rssi !== undefined) {
-              updateWifiDisplay(msg.rssi);
-            }
-          }catch(e){ console.error('WS parse error:', e); }
+            if (msg.targetf) { if (msg.targetf.filtered) updateTargetF(msg.targetf); else updateRawTarget(msg.targetf); }
+            if (msg.rssi !== undefined) updateWifiDisplay(msg.rssi);
+          }catch(_){
+            try{
+              const msg = parseJsonSanitized(s);
+              if (msg.gps) updateGPS(msg.gps);
+              if (msg.targetf) { if (msg.targetf.filtered) updateTargetF(msg.targetf); else updateRawTarget(msg.targetf); }
+              if (msg.rssi !== undefined) updateWifiDisplay(msg.rssi);
+            }catch(__){ /* ignorer */ }
+          }
         };
       }catch(e){ console.log(e); setTimeout(connectWs, 1000); }
+    }
+    // --- Follow HUD (cercle + flèches) ---
+    let followHud = null;
+    function ensureFollowHud(){
+      if (followHud) return followHud;
+      const hud = L.layerGroup();
+      hud.addTo(map);
+      followHud = {group:hud, circle:null, arrows:[]};
+      return followHud;
+    }
+    function clearFollowHud(){ if(!followHud) return; followHud.group.clearLayers(); followHud.circle=null; followHud.arrows=[]; }
+    function updateFollowHud(centerLatLng, headingDeg){
+      if (!miniHudVisible) { clearFollowHud(); return; }
+      const hud = ensureFollowHud();
+      hud.group.clearLayers(); hud.arrows=[];
+      // Cercle jaune autour du centre
+      hud.circle = L.circle(centerLatLng, {radius: FOLLOW_RADIUS_M, color:'#ffd400', weight:2, opacity:0.9, fill:false}).addTo(hud.group);
+      // Crantages (ticks) internes: mineurs 30°, majeurs 90°
+      drawTicks(centerLatLng, FOLLOW_RADIUS_M);
+      // (échelle supprimée, le rayon est connu de l'UI)
+      // Nord (triangle blanc) + repère de couleur au nord selon cible suivie
+      placeArrow(centerLatLng, 0, FOLLOW_RADIUS_M, 'follow-north');
+      placeNorthMarker(centerLatLng);
+      // Flèches vers éléments visibles: dernier targetF, GPS, et waypoints
+      if (targetMarker){ placeArrow(centerLatLng, bearing(centerLatLng, targetMarker.getLatLng()), FOLLOW_RADIUS_M, 'tri-red'); }
+      if (gpsMarker){ placeArrow(centerLatLng, bearing(centerLatLng, gpsMarker.getLatLng()), FOLLOW_RADIUS_M, 'tri-blue'); }
+      if (Array.isArray(wpMarkers)){
+        for (let i=0;i<wpMarkers.length;i++){ 
+          const mk = wpMarkers[i];
+          const lbl = String.fromCharCode(65 + (i % 26)) + (1 + ((i/26)|0)%9);
+          placeArrow(centerLatLng, bearing(centerLatLng, mk.getLatLng()), FOLLOW_RADIUS_M, 'tri-black', lbl);
+        }
+      }
+      // (option désactivée) indicateur de cap: retiré à la demande
+    }
+    // function drawScaleChip(...) supprimée
+    function placeNorthMarker(center){
+      // Choisir la couleur en fonction du mode de suivi
+      let htmlDot = '<div class="north-dot" style="background:#49a2ff"></div>';
+      if (followRov) htmlDot = '<div class="north-dot" style="background:#ff4d4d"></div>';
+      const p = destPoint(center, 0, FOLLOW_RADIUS_M);
+      const icon = L.divIcon({className:'', html: htmlDot, iconSize:[14,14], iconAnchor:[7,7]});
+      const m = L.marker(p, {icon});
+      m.addTo(followHud.group);
+    }
+    function drawTicks(center, radiusM){
+      const minorLen = 12;   // m
+      const majorLen = 22;   // m
+      const isDark = document.body.classList.contains('theme-dark');
+      const colMinor = isDark ? '#e6e6e6' : '#6b7280'; // gris plus soutenu en mode clair
+      const colMajor = isDark ? '#f3f4f6' : '#374151'; // plus contrasté en clair
+      const opMinor = isDark ? 0.5 : 0.45;
+      const opMajor = isDark ? 0.7 : 0.6;
+      for (let deg=0; deg<360; deg+=30){
+        const isMajor = (deg % 90) === 0;
+        const len = isMajor ? majorLen : minorLen;
+        const r2 = radiusM - 2; // bord extérieur (proche du cercle)
+        const r1 = r2 - len;    // intérieur
+        const p1 = destPoint(center, deg*Math.PI/180, r1);
+        const p2 = destPoint(center, deg*Math.PI/180, r2);
+        L.polyline([p1,p2], {color: isMajor? colMajor : colMinor, weight: isMajor? 2: 1, opacity: isMajor? opMajor: opMinor}).addTo(followHud.group);
+      }
+    }
+    function placeArrow(origin, bearingDeg, radiusM, css, label){
+      const p = destPoint(origin, bearingDeg*Math.PI/180, radiusM);
+      const colorClass = (css==='tri-blue'||css==='tri-red'||css==='tri-black')? css : null;
+      const triClass = colorClass? `tri ${colorClass}` : (css==='follow-north'? 'follow-north' : 'tri');
+      const html = label? `<div class="arrow-container" style="transform:rotate(${bearingDeg-180}deg)"><div class="${triClass}"></div><div class="arrow-label" style="transform:rotate(180deg)">${label}</div></div>` : `<div class="${triClass}" style="transform:rotate(${bearingDeg-180}deg)"></div>`;
+      const div = L.divIcon({className:'', html, iconSize:[60,16], iconAnchor:[30,8]});
+      const m = L.marker(p, {icon:div});
+      m.addTo(followHud.group);
+      followHud.arrows.push(m);
+    }
+    function destPoint(origin, angleRad, distM){
+      const R=6378137; const d=distM; const lat=origin.lat*Math.PI/180, lon=origin.lng*Math.PI/180; const br=angleRad; const lat2 = Math.asin(Math.sin(lat)*Math.cos(d/R)+Math.cos(lat)*Math.sin(d/R)*Math.cos(br)); const lon2 = lon + Math.atan2(Math.sin(br)*Math.sin(d/R)*Math.cos(lat), Math.cos(d/R)-Math.sin(lat)*Math.sin(lat2));
+      return L.latLng(lat2*180/Math.PI, lon2*180/Math.PI);
+    }
+    function bearing(a, b){
+      const toRad=(x)=>x*Math.PI/180, toDeg=(x)=>x*180/Math.PI; const lat1=toRad(a.lat), lon1=toRad(a.lng), lat2=toRad(b.lat), lon2=toRad(b.lng); const dLon=lon2-lon1; const y=Math.sin(dLon)*Math.cos(lat2); const x=Math.cos(lat1)*Math.sin(lat2)-Math.sin(lat1)*Math.cos(lat2)*Math.cos(dLon); let br=toDeg(Math.atan2(y,x)); if (br<0) br+=360; return br;
     }
     function updateWifiDisplay(rssi) {
       if (rssi === undefined || rssi === null) return;
@@ -479,8 +629,10 @@
     
     let lastGps = null;
     function updateGPS(g){
-      if (!g || !g.valid) return;
+      if (!g || typeof g.lat !== 'number' || typeof g.lon !== 'number' || !isFinite(g.lat) || !isFinite(g.lon)) return;
       const lat=g.lat, lon=g.lon;
+      // ignorer la coordonnée 0,0 pure qui n'est pas exploitable
+      if ((lat === 0 && lon === 0)) return;
       lastGps = {lat, lon};
       
       // Mettre à jour la position du marqueur
@@ -504,6 +656,8 @@
       mlat/=recentGps.length; mlon/=recentGps.length;
       const c = map.getCenter(); const dLat=Math.abs(c.lat-mlat), dLon=Math.abs(c.lng-mlon);
       if (followGps && (dLat>0.0002 || dLon>0.0002)) map.panTo([mlat,mlon], {animate:true,duration:0.4});
+      // Mettre à jour le HUD de suivi autour du GPS si on suit le GPS
+      if (followGps) updateFollowHud(L.latLng(mlat, mlon), g.hdg);
       
       // ✅ Mettre à jour le heading GPS dans le HUD en temps réel
       if (g.hdg !== undefined && g.hdg !== null) {
@@ -628,13 +782,15 @@
         lastTargetLon = lon;
         if (followRov) {
           map.panTo([lat, lon], {animate:true, duration:0.4});
+          updateFollowHud(L.latLng(lat,lon), null);
         }
       }
     }
     async function refreshHud(){
       try{
         const r = await fetch('/api/telemetry', {cache:'no-store'});
-        const j = await r.json();
+        const txt = await r.text();
+        const j = parseJsonSanitized(txt);
         if (!j || typeof j !== 'object') { console.warn('API telemetry vide'); return; }
         const hud = document.getElementById('hud');
         // Statut RTK (badge compact)
@@ -670,8 +826,8 @@
         if (chip){ chip.textContent = j.ip || 'IP —'; chip.dataset.ip = j.ip || ''; }
         
         // Mise à jour du GPS depuis l'API
-        if (j.gps && j.gps.valid) {
-          updateGPS({valid: true, lat: j.gps.lat, lon: j.gps.lon, hdg: j.gps.hdg});
+        if (j.gps && typeof j.gps.lat === 'number' && typeof j.gps.lon === 'number' && isFinite(j.gps.lat) && isFinite(j.gps.lon)) {
+          updateGPS({lat: j.gps.lat, lon: j.gps.lon, hdg: j.gps.hdg});
         }
         
         // Mise à jour du targetF depuis l'API (fallback si WebSocket ne fonctionne pas)
@@ -766,6 +922,18 @@
           console.log('WiFi RSSI:', rssi, 'Quality:', quality);
         } else {
           console.log('No RSSI data in API response');
+        }
+
+        // Mise à jour temps réel du popup WP si ouvert
+        if (activeWpIdx!=null && waypoints[activeWpIdx]){
+          const wp = waypoints[activeWpIdx];
+          const ref = (lastTargetLat!=null && lastTargetLon!=null)? {lat:lastTargetLat, lon:lastTargetLon} : (lastGps || null);
+          if (ref){
+            const brg = bearingDeg(ref.lat, ref.lon, wp.lat, wp.lon);
+            const dkm = haversine({lat:ref.lat,lon:ref.lon},{lat:wp.lat,lon:wp.lon});
+            const eB = document.getElementById('wp-brg'); if (eB) eB.textContent = `Brg: ${brg.toFixed(1)}°`;
+            const eD = document.getElementById('wp-dist'); if (eD) eD.textContent = `Dist: ${(dkm*1000).toFixed(0)} m`;
+          }
         }
       }catch(e){console.error('Erreur refreshHud:', e);}
     }

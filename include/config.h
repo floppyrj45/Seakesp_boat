@@ -14,7 +14,7 @@
 
 // PM02 non utilisé: ne pas définir de broches
 
-static const char* kFirmwareVersion = "v2.2.0";
+static const char* kFirmwareVersion = "v2.2.2";
 
 
 

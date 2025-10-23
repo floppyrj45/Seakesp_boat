@@ -1,4 +1,5 @@
 #include "gps_skytraq.h"
+#include "web_server.h"
 
 
 static HardwareSerial* gpsSerial = nullptr;
@@ -157,22 +158,23 @@ void gpsBegin(HardwareSerial& serial, uint32_t baud, int rxPin, int txPin) {
 
 bool gpsAutoDetectBaud(uint32_t& selectedBaud) {
   if (!gpsSerial) return false;
-  const uint32_t candidates[] = {921600, 115200, 57600, 38400, 19200, 9600}; // Tester 921600 en premier
+  // Essayer d'abord les vitesses les plus courantes (115200, 9600), puis autres, puis 921600 en dernier
+  const uint32_t candidates[] = {115200, 9600, 57600, 38400, 19200, 921600};
   for (uint32_t b : candidates) {
     gpsSerial->end();
     gpsSerial->begin(b, SERIAL_8N1, gpsCurRx, gpsCurTx);
     unsigned long t0 = millis();
     int hits = 0;
-    while (millis() - t0 < 300) { // Réduire timeout à 300ms par baudrate
+    while (millis() - t0 < 1200) { // Fenêtre plus large pour laisser passer au moins 1-2 trames à 9600 bps
       if (gpsSerial->available()) {
         String line = gpsSerial->readStringUntil('\n');
         line.trim();
         if (line.startsWith("$") && line.indexOf('*') > 0) {
           hits++;
-          if (hits >= 2) { selectedBaud = b; return true; } // Réduire à 2 trames valides
+          if (hits >= 1) { selectedBaud = b; return true; }
         }
       }
-      delay(5); // Réduire délai
+      delay(5);
     }
   }
   return false;
@@ -205,8 +207,13 @@ void gpsPoll() {
         if (!line.isEmpty()) {
           if (rawBuffer.length() > 8192) rawBuffer.remove(0, rawBuffer.length() - 4096);
           rawBuffer += line + "\n";
-          // Suppression echo GPS pour éviter flood série à 8Hz
-          // if (echoRaw) Serial.println(line);
+          // Echo optionnel des trames NMEA sur le moniteur série et via WebSocket (debug)
+          if (echoRaw) {
+            Serial.println(line);
+            String esc = line; esc.replace("\\", "\\\\"); esc.replace("\"", "\\\"");
+            String js = String("{\"nmea\":\"") + esc + "\"}";
+            wsBroadcastJson(js);
+          }
           parseLine(line);
         }
       }
