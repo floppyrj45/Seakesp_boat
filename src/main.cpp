@@ -17,7 +17,7 @@
 #include "demo_sim.h"
 
 // 🏷️ Version firmware
-const char* FIRMWARE_VERSION = "2.2.0";
+const char* FIRMWARE_VERSION = "2.2.2";
 const char* BUILD_DATE = __DATE__ " " __TIME__;
 
 // Forward decls (helpers defined later in file)

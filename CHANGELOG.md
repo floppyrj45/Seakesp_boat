@@ -7,6 +7,15 @@
 - Divers: harmonisation thème, corrections WS/API, petites optimisations
 # 🚀 CHANGELOG - ROV ESP32 Seaker v2.0
 
+## v2.2.2 - 2025-10-23
+- GPS: autobaud plus robuste (fenêtre élargie, ordre 115200/9600 en priorité)
+- Console: écho NMEA brut activable (touche 'e'), diffusion via WebSocket
+- Carte: suit lat/lon même sans fix (hors 0,0) pour diagnostic terrain
+- Debug: commande 'x' pour swap RX/TX GPS + auto-baud immédiat
+- Web: parsing WebSocket durci (ignore frames non-JSON), bugs JSON.parse corrigés
+- Build: répertoire de build `.pio2` pour éviter les verrous OneDrive
+- Divers: petites améliorations logs RSSI et stabilité WS
+
 ## 🆕 Version 2.0 - Septembre 2025
 
 ### ✨ Nouvelles fonctionnalités majeures
