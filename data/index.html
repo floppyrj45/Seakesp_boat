@@ -28,6 +28,35 @@
     .btn:hover{filter:brightness(1.05)}
   </style>
   <script>
+    // Parseur JSON tolérant remplaçant NaN/Infinity par null
+    function parseJsonSanitized(raw){
+      try{ return JSON.parse(raw); }catch{}
+      const sanitized = String(raw)
+        .replace(/(^|[:,\[{]\s*)-?Infinity(\s*[,}\]])/gi, '$1null$2')
+        .replace(/(^|[:,\[{]\s*)NaN(\s*[,}\]])/gi, '$1null$2');
+      return JSON.parse(sanitized);
+    }
+    // i18n simple (sélecteur global)
+    let appLang = (function(){ try{ return localStorage.getItem('app.lang')||'fr'; }catch{ return 'fr'; } })();
+    const i18n = {
+      fr: { langLabel:'Langue', mapBtn:'🗺️ Ouvrir la carte', consoleBtn:'🖥️ Console', aboutBtn:'📖 À propos', otaBtn:'🔄 Mise à jour OTA', contactBtn:'📧 Contact Support' },
+      en: { langLabel:'Language', mapBtn:'🗺️ Open Map', consoleBtn:'🖥️ Console', aboutBtn:'📖 About', otaBtn:'🔄 OTA Update', contactBtn:'📧 Contact Support' },
+      de: { langLabel:'Sprache', mapBtn:'🗺️ Karte öffnen', consoleBtn:'🖥️ Konsole', aboutBtn:'📖 Über', otaBtn:'🔄 OTA Update', contactBtn:'📧 Support Kontakt' },
+      es: { langLabel:'Idioma', mapBtn:'🗺️ Abrir mapa', consoleBtn:'🖥️ Consola', aboutBtn:'📖 Acerca de', otaBtn:'🔄 Actualización OTA', contactBtn:'📧 Contacto Soporte' },
+      it: { langLabel:'Lingua', mapBtn:'🗺️ Apri mappa', consoleBtn:'🖥️ Console', aboutBtn:'📖 Informazioni', otaBtn:'🔄 Aggiornamento OTA', contactBtn:'📧 Contatta Supporto' },
+      zh: { langLabel:'语言', mapBtn:'🗺️ 打开地图', consoleBtn:'🖥️ 控制台', aboutBtn:'📖 关于', otaBtn:'🔄 OTA 更新', contactBtn:'📧 联系支持' },
+      br: { langLabel:'Yezh', mapBtn:'🗺️ Digeriñ ar gartenn', consoleBtn:'🖥️ Consol', aboutBtn:'📖 Diwar-benn', otaBtn:'🔄 Hizivadenn OTA', contactBtn:'📧 Darempred Skoazell' }
+    };
+    function t(k){ const d=i18n[appLang]||i18n.fr; return d[k]||i18n.fr[k]||k; }
+    function setLang(l){ appLang=l||'fr'; try{ localStorage.setItem('app.lang', appLang);}catch{}; applyLang(); }
+    function applyLang(){
+      const mapBtn=document.getElementById('btn-map'); if(mapBtn) mapBtn.textContent = t('mapBtn');
+      const consoleBtn=document.getElementById('btn-console'); if(consoleBtn) consoleBtn.textContent = t('consoleBtn');
+      const aboutBtn=document.getElementById('btn-about'); if(aboutBtn) aboutBtn.textContent = t('aboutBtn');
+      const otaBtn=document.getElementById('btn-ota'); if(otaBtn) otaBtn.textContent = t('otaBtn');
+      const contactBtn=document.getElementById('btn-contact'); if(contactBtn) contactBtn.textContent = t('contactBtn');
+      const label=document.getElementById('lang-label'); if(label) label.textContent = t('langLabel')+':';
+    }
     function cls(v, min, max){ return Math.max(0, Math.min(1, (v-min)/(max-min))); }
     
     // Historique pour moyennage (stocke les 10 dernières mesures)
@@ -142,7 +171,8 @@
     async function refresh(){
       try{
         const r = await fetch('/api/telemetry', {cache:'no-store'});
-        const j = await r.json();
+        const txt = await r.text();
+        const j = parseJsonSanitized(txt);
         // Affichage GPS avec statut RTK
         if(j.gps) {
           let gpsText = `Valid: ${j.gps.valid ? 'OUI' : 'NON'}\n`;
@@ -631,21 +661,26 @@
         };
         
         ws.onmessage = (ev) => {
+          // Certaines frames peuvent être du texte NMEA ou des logs ($GPS,..) ⇒ ignorer si non-JSON
+          const data = ev?.data;
+          if (typeof data !== 'string') return;
+          const s = data.trim();
+          if (!s) return;
+          // Heuristique rapide: les frames JSON commencent par { et finissent par }
+          if (s[0] !== '{' || s[s.length-1] !== '}') return;
           try {
-            const msg = JSON.parse(ev.data);
-            
-            // Mise à jour GPS en temps réel (heading inclus)
-            if (msg.gps && msg.gps.valid) {
-              updateGpsHeadingRealtime(msg.gps);
+            const msg = JSON.parse(s);
+            if (msg && typeof msg === 'object') {
+              if (msg.gps && msg.gps.valid) updateGpsHeadingRealtime(msg.gps);
+              if (msg.rssi !== undefined) console.log('RSSI WebSocket:', msg.rssi);
             }
-            
-            // Autres mises à jour...
-            if (msg.rssi !== undefined) {
-              console.log('RSSI WebSocket:', msg.rssi);
-            }
-            
-          } catch(e) {
-            console.error('Erreur parsing WebSocket:', e);
+          } catch(_) {
+            // Essai de sanitization (NaN/Infinity)
+            try{
+              const msg = parseJsonSanitized(s);
+              if (msg.gps && msg.gps.valid) updateGpsHeadingRealtime(msg.gps);
+              if (msg.rssi !== undefined) console.log('RSSI WebSocket:', msg.rssi);
+            }catch(__){ /* ignorer silencieusement */ }
           }
         };
         
@@ -679,6 +714,27 @@
       }
     }
 
+    // Démo ON/OFF
+    async function refreshDemoSwitch(){
+      try{
+        const r = await fetch('/api/demo');
+        const j = await r.json();
+        const c = document.getElementById('demoToggle');
+        const s = document.getElementById('demoStatus');
+        if (c) c.checked = !!j.enabled;
+        if (s) s.textContent = j.enabled? 'Démo: ON' : 'Démo: OFF';
+      }catch(e){ console.warn('demo get failed', e); }
+    }
+    async function setDemoEnabled(en){
+      try{
+        const body = `enabled=${en?'true':'false'}`;
+        const r = await fetch('/api/demo', {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body});
+        if (r.ok){
+          const s = document.getElementById('demoStatus');
+          if (s) s.textContent = en? 'Démo: ON' : 'Démo: OFF';
+        }
+      }catch(e){ console.error('demo post failed', e); }
+    }
     async function toggleTatFilter(){
       try{
         const btn = document.getElementById('tatBtn');
@@ -698,18 +754,43 @@
     window.addEventListener('load', () => {
       refresh();
       updateDateTime();
+      // i18n init
+      try{ const sel=document.getElementById('lang-select'); if(sel){ sel.value = appLang; } }catch{}
+      applyLang();
       checkGpsForward(); // Vérifier l'état initial du GPS Forward
       loadWifiDirect(); // Charger le SSID actuel
       loadSeakerConfig(); // Charger la configuration SEAKER
       loadSeakerConfigs(); // Charger les profils CONFIG
       connectWebSocket(); // ✅ Connecter WebSocket pour temps réel
+      // Démo UI
+      refreshDemoSwitch();
+      const c = document.getElementById('demoToggle');
+      if (c) c.addEventListener('change', (e)=> setDemoEnabled(e.target.checked));
     });
   </script>
 </head>
 <body>
-  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;gap:12px">
     <h1 style="margin:0">🚤 Seakesp Boat v2.2.0</h1>
-    <div id="datetime" style="color:#7cc4ff;font-size:14px">--/--/---- --:--:--</div>
+    <div style="display:flex;align-items:center;gap:12px">
+      <div id="datetime" style="color:#7cc4ff;font-size:14px">--/--/---- --:--:--</div>
+      <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:#9fb6c7">
+        <span id="lang-label">Langue:</span>
+        <select id="lang-select" onchange="setLang(this.value)" style="background:#11161d;color:#e6edf3;border:1px solid #1f2a36;border-radius:4px;padding:4px 6px">
+          <option value="fr">Français</option>
+          <option value="en">English</option>
+          <option value="br">Brezhoneg</option>
+          <option value="zh">中文</option>
+          <option value="de">Deutsch</option>
+          <option value="es">Español</option>
+          <option value="it">Italiano</option>
+        </select>
+      </div>
+      <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:#9fb6c7">
+        <input id="demoToggle" type="checkbox" style="width:16px;height:16px">
+      </label>
+      <span id="demoStatus" style="font-size:12px;color:#7cc4ff"></span>
+    </div>
   </div>
   <div class="grid">
     <div class="card" style="position:relative">
@@ -854,11 +935,11 @@
     </div>
     <div class="card">
       <div class="btn-row">
-        <a class="btn btn-primary" href="/map">🗺️ Ouvrir la carte</a>
-        <a class="btn btn-ghost" href="/console">🖥️ Console</a>
-        <a class="btn btn-green" href="/about">📖 À propos</a>
-        <a class="btn btn-orange" href="/update">🔄 Mise à jour OTA</a>
-        <a class="btn btn-ghost" href="mailto:Seakesp@nowyouknow.fr?subject=Feedback Seakesp Boat&body=Version: v2.2.0%0D%0A%0D%0A[Décrivez votre problème ou suggestion ici]" title="Reporter un bug ou envoyer un feedback">📧 Contact Support</a>
+        <a id="btn-map" class="btn btn-primary" href="/map">🗺️ Ouvrir la carte</a>
+        <a id="btn-console" class="btn btn-ghost" href="/console">🖥️ Console</a>
+        <a id="btn-about" class="btn btn-green" href="/about">📖 À propos</a>
+        <a id="btn-ota" class="btn btn-orange" href="/update">🔄 Mise à jour OTA</a>
+        <a id="btn-contact" class="btn btn-ghost" href="mailto:Seakesp@nowyouknow.fr?subject=Feedback Seakesp Boat&body=Version: v2.2.0%0D%0A%0D%0A[Décrivez votre problème ou suggestion ici]" title="Reporter un bug ou envoyer un feedback">📧 Contact Support</a>
       </div>
     </div>
   </div>

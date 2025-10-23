@@ -859,6 +859,20 @@ void loop() {
         }
         break;
       }
+      case 'x':
+      case 'X': {
+        // Inversion rapide des pins RX/TX du GPS pour diagnostiquer un croisement
+        gpsSwapPins();
+        Serial.println("GPS RX/TX pins swapped (diagnostic)");
+        // Relancer une auto-détection immédiate
+        uint32_t sel = 0;
+        if (gpsAutoDetectBaud(sel)) {
+          Serial.printf("Auto-baud OK après swap: %lu\n", (unsigned long)sel);
+        } else {
+          Serial.println("Auto-baud échec après swap");
+        }
+        break;
+      }
       
       case 'v': {
         if (gLogLevel>LOG_ERROR) gLogLevel = (LogLevel)((int)gLogLevel - 1);
@@ -1015,10 +1029,12 @@ void loop() {
       
       // Push GPS si position OU heading a changé
       if (!have || f.latitude!=prevLat || f.longitude!=prevLon || fabs(currentHdg - prevHdg) > 0.1) {
+        // Sanitize: valeurs non finies → null dans JSON
+        auto num = [](double v, int d){ return isfinite(v) ? String(v, d) : String("null"); };
         String js = String("{\"gps\":{\"valid\":") + String(f.valid?1:0) + 
-                   ",\"lat\":" + String(f.latitude,7) + 
-                   ",\"lon\":" + String(f.longitude,7) +
-                   ",\"hdg\":" + String(isfinite(currentHdg) ? currentHdg : 0.0, 1) + "}}";
+                   ",\"lat\":" + num(f.latitude,7) + 
+                   ",\"lon\":" + num(f.longitude,7) +
+                   ",\"hdg\":" + num(currentHdg,1) + "}}";
         wsBroadcastJson(js);
         prevLat=f.latitude; prevLon=f.longitude; prevHdg=currentHdg; have=true;
         lastGpsWsMs = nowMs;
@@ -1031,7 +1047,8 @@ void loop() {
       if (!isnan(gTargetFLat) && !isnan(gTargetFLon) && !isnan(gTargetFR95)) {
         static unsigned long lastTargetFWsMs = 0;
         if (nowMs - lastTargetFWsMs >= 250) { // Plus fréquent: toutes les 250ms
-          String js = String("{\"targetf\":{\"lat\":") + String(gTargetFLat,7) + ",\"lon\":" + String(gTargetFLon,7) + ",\"r95_m\":" + String(gTargetFR95,2) + "}}";
+          auto num2 = [](double v, int d){ return isfinite(v) ? String(v, d) : String("null"); };
+          String js = String("{\"targetf\":{\"lat\":") + num2(gTargetFLat,7) + ",\"lon\":" + num2(gTargetFLon,7) + ",\"r95_m\":" + num2(gTargetFR95,2) + "}}";
           wsBroadcastJson(js);
           lastTargetFWsMs = nowMs;
         }

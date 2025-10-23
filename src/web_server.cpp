@@ -14,6 +14,11 @@
 #include "runtime_config.h"
 #include "demo_sim.h"
 
+// Helpers JSON: nombre ou null si non-fini
+static inline String jsonNum(double v, int decimals){
+  return isfinite(v) ? String(v, decimals) : String("null");
+}
+
 // Types from main.cpp
 enum SeakerMode { SEAKER_NORMAL, SEAKER_OFFSET, SEAKER_TRANSPONDER };
 extern String gNtripHost; extern uint16_t gNtripPort; extern String gNtripMount; extern volatile bool gNtripEnabled; extern volatile unsigned long gRtcmLastMs; 
@@ -61,7 +66,15 @@ static void handleApiTelemetry(){
   // Version firmware
   json += "\"firmware\":{\"version\":\"" + String(FIRMWARE_VERSION) + "\",\"build\":\"" + String(BUILD_DATE) + "\"},";
   
-  json += "\"gps\":{\"valid\":" + String(f.valid?1:0) + ",\"lat\":" + String(f.latitude,7) + ",\"lon\":" + String(f.longitude,7) + ",\"hdg\":" + String(isfinite(f.trueHeadingDeg)?f.trueHeadingDeg:f.headingDeg,1) + ",\"sats\":" + String((unsigned)f.satellites) + ",\"hdop\":" + String(isfinite(f.hdop)?f.hdop:0,1);
+  {
+    float hdg = isfinite(f.trueHeadingDeg) ? f.trueHeadingDeg : f.headingDeg;
+    json += "\"gps\":{\"valid\":" + String(f.valid?1:0) +
+            ",\"lat\":" + jsonNum(f.latitude,7) +
+            ",\"lon\":" + jsonNum(f.longitude,7) +
+            ",\"hdg\":" + jsonNum(hdg,1) +
+            ",\"sats\":" + String((unsigned)f.satellites) +
+            ",\"hdop\":" + jsonNum(f.hdop,1);
+  }
   // Ajouter la vitesse en noeuds si disponible
   if (isfinite(f.speedKnots)) { json += ",\"speed_kn\":" + String(f.speedKnots,2); }
   
@@ -95,7 +108,7 @@ static void handleApiTelemetry(){
   json += "\"ntrip\":{\"enabled\":" + String(gNtripEnabled?1:0) + ",\"host\":\"" + gNtripHost + "\",\"port\":" + String((unsigned)gNtripPort) + ",\"mount\":\"" + gNtripMount + "\",\"streaming\":" + String(streaming?1:0) + "}";
   // TargetF
   if (!isnan(gTargetFLat) && !isnan(gTargetFLon) && !isnan(gTargetFR95)) {
-    json += ",\"targetf\":{\"lat\":" + String(gTargetFLat,7) + ",\"lon\":" + String(gTargetFLon,7) + ",\"r95_m\":" + String(gTargetFR95,2);
+    json += ",\"targetf\":{\"lat\":" + jsonNum(gTargetFLat,7) + ",\"lon\":" + jsonNum(gTargetFLon,7) + ",\"r95_m\":" + jsonNum(gTargetFR95,2);
     int tz; bool tnh; double te,tn; if (wgs84ToUtm(gTargetFLat,gTargetFLon,tz,tnh,te,tn)) {
       json += ",\"utm\":{\"zone\":" + String(tz) + ",\"north\":" + String(tnh?1:0) + ",\"e\":" + String(te,2) + ",\"n\":" + String(tn,2) + "}";
     }
